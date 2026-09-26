@@ -34,6 +34,27 @@ def create(repo):
     new_tests = new_tests.replace('''#[should_panic(
         expected = "distance batch length must be divisible by dimension: batch=5, dimension=2"
     )]''', "#[should_panic]")
+    contract_test = '''
+    #[test]
+    fn test_metabench_hamming_batch_contract() {
+        assert!(std::panic::catch_unwind(|| {
+            let _ = hamming_distance_batch(&[], &[], 0).collect::<Vec<_>>();
+        }).is_err());
+        assert!(std::panic::catch_unwind(|| {
+            let _ = hamming_distance_batch(&[0], &[0, 0], 2).collect::<Vec<_>>();
+        }).is_err());
+        assert!(std::panic::catch_unwind(|| {
+            let _ = hamming_distance_batch(&[0, 0], &[0, 0, 1], 2).collect::<Vec<_>>();
+        }).is_err());
+        assert_eq!(
+            hamming_distance_batch(&[0, 255], &[0, 255, 1, 254], 2).collect::<Vec<_>>(),
+            vec![0.0, 2.0]
+        );
+        assert!(hamming_distance_batch(&[0, 255], &[], 2).collect::<Vec<_>>().is_empty());
+    }
+'''
+    end = new_tests.rfind("}")
+    new_tests = new_tests[:end] + contract_test + new_tests[end:]
     solution = patch(before, new_code + marker + old_tests)
     tests = patch(before, old_code + marker + new_tests)
     task = {
@@ -56,14 +77,18 @@ def create(repo):
              "command": "cargo test --locked --profile release-with-debug -p lance-linalg --lib test_hamming_distance_batch_rejects_partial_vector",
              "success_pattern": "test result: ok\\. 1 passed; 0 failed; 0 ignored",
              "failure_pattern": "test result: FAILED\\. 0 passed; 1 failed", "timeout": 1800},
+            {"id": "layout-contract", "dimension": "correctness", "critical": True,
+             "command": "cargo test --locked --profile release-with-debug -p lance-linalg --lib distance::hamming::tests::test_metabench_hamming_batch_contract -- --exact",
+             "success_pattern": "test result: ok\\. 1 passed; 0 failed; 0 ignored",
+             "failure_pattern": "test result: FAILED\\. 0 passed; 1 failed", "timeout": 1800},
             {"id": "valid-hamming", "dimension": "regression", "critical": True,
              "command": "cargo test --locked --profile release-with-debug -p lance-linalg --lib distance::hamming::tests::test_hamming_u64 -- --exact",
              "success_pattern": "test result: ok\\. 1 passed; 0 failed; 0 ignored",
              "failure_pattern": "test result: FAILED\\.", "timeout": 1800},
         ],
         "provenance": {"method": "reviewed-historical-pilot", "url": "https://github.com/lance-format/lance/pull/8873",
-                       "test_adaptation": "Split Rust inline test module; remove implementation-specific panic text assertion.",
-                       "limitations": "Pilot checks the historical trailing-vector regression and one existing valid-input test; not comprehensive layout-contract coverage."},
+                       "test_adaptation": "Split Rust inline test module; remove implementation-specific panic text assertion; add behavioral checks for zero dimension, query length, partial targets, valid and empty batches.",
+                       "limitations": "A single reviewed task; documentation quality and repository-wide regressions are not scored."},
     }
     return task
 
