@@ -137,14 +137,18 @@ if turns == 1:
     action = {"command": "printf 'def add(a, b):\\n    return a + b\\n' > calc.py"}
 else:
     action = {"submit": True}
-print(json.dumps({"action": action, "usage": {"input_tokens": 10, "output_tokens": 5, "cost_usd": 0.01}}))
+print(json.dumps({"action": action, "usage": {"input_tokens": 10, "cached_input_tokens": 4, "output_tokens": 5, "reasoning_output_tokens": 2, "cost_usd": 0.01}}))
 ''')
         budget = {"max_steps": 2, "max_calls_per_step": 3, "seconds_per_step": 20, "tool_timeout": 5, "max_tool_output": 1000}
-        rows = run(freeze([task]), self.repo, {}, [sys.executable, str(adapter)], "scripted-control", "none",
+        rows = run(freeze([task]), self.repo, {"by_task": {task["instance_id"]: {}}}, [sys.executable, str(adapter)], "scripted-control", "none",
                    budget, self.root / "run", trusted_local=True)
         self.assertEqual([r["score"] for r in rows], [0, 100])
         self.assertEqual([r["agent_steps"] for r in rows], [1, 3])
         self.assertEqual(rows[-1]["usage"]["input_tokens"], 30)
+        self.assertEqual(rows[-1]["usage"]["cached_input_tokens"], 12)
+        self.assertEqual(rows[-1]["usage"]["reasoning_output_tokens"], 6)
+        self.assertEqual(rows[-1]["usage"]["total_tokens"], 45)
+        self.assertEqual(rows[-1]["step_usage"]["total_tokens"], 30)
         self.assertTrue(all(not r["score_eligible"] for r in rows))
         self.assertIn("scripted-control", report(rows))
 
@@ -175,7 +179,7 @@ print(json.dumps({"action": action, "usage": {"input_tokens": 10, "output_tokens
         model = CommandModel([sys.executable, str(script)], "test", "default")
         action, usage = model.invoke([], 5)
         self.assertEqual(action, {"submit": True})
-        self.assertEqual(usage, {})
+        self.assertTrue(all(value is None for value in usage.values()))
         script.write_text('print(\'{"action": null}\')\n')
         with self.assertRaises(ValueError):
             model.invoke([], 5)

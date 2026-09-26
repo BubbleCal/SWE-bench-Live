@@ -181,6 +181,26 @@ already used by RepoLaunch; API credentials stay in the trusted adapter process.
 Providers that need a different endpoint can supply another JSON adapter. Adapter
 configuration, model version, and reasoning setting are part of the run identity.
 
+`examples/metabench/codex_model.py` is an alternative that uses saved local Codex CLI
+authentication. It disables native CLI tools, plugins, memories and inherited app routing;
+the CLI returns one structured decision for the metabench container to execute. Unexpected
+native tool events invalidate the invocation. Set `METABENCH_PROVIDER_LOG_DIR` to preserve
+the raw provider event streams. This is a fixed Codex CLI inference wrapper, not a claim
+of equivalence to direct API requests or the full Codex coding-agent product.
+
+The runner stores per-call usage, each round's incremental `step_usage`, and cumulative
+`usage`. Counters include input, cached input, cache-write input, output and reasoning
+output tokens where provided. Cached input is a subset of input, and reasoning output is
+a subset of output: `total_tokens = input_tokens + output_tokens`, without adding either
+subset again. Unknown counters, including unobserved timed-out requests and unavailable
+ChatGPT-account billing, remain null rather than being estimated as zero. CLI usage
+semantics follow the [official JSON event format](https://learn.chatgpt.com/docs/non-interactive-mode).
+
+An environment configuration may contain `by_task`, mapping each instance ID to its own
+validated environment. This permits separate immutable images containing each task's
+original-base build cache. Each task still validates against the exact selected environment
+hash; caches from reference solutions or other future repo revisions must not enter images.
+
 One `step` is one submission round. `agent_steps` counts cumulative model calls, including
 submission calls. Each round has independent call/time limits. The model gets its prior
 conversation, current workspace, and a fixed request to review the original requirements.

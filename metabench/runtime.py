@@ -72,9 +72,23 @@ class Workspace:
                     raise RuntimeErrorWithLog(result["output"])
                 self.container = name
                 self.must('test -z "$(ls -A /repo)"')
-                copied = execute(["docker", "cp", str(self.root) + "/.", name + ":/repo"], timeout=120)
-                if copied["returncode"]:
-                    raise RuntimeErrorWithLog(copied["output"])
+                # A cap-drop=ALL root cannot overwrite host-owned/read-only sources.
+                def owned(member):
+                    member.uid = member.gid = 0
+                    member.uname = member.gname = "root"
+                    if member.isdir():
+                        member.mode |= 0o700
+                    elif member.isfile():
+                        member.mode |= 0o600
+                    return member
+                archive_path = Path(self.temp.name) / "source.tar"
+                with tarfile.open(archive_path, "w") as archive:
+                    archive.add(self.root, arcname=".", filter=owned)
+                with archive_path.open("rb") as source:
+                    copied = subprocess.run(["docker", "cp", "-", name + ":/repo"], stdin=source,
+                                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=120)
+                if copied.returncode:
+                    raise RuntimeErrorWithLog(copied.stdout.decode(errors="replace"))
             self.must("git init -q && git config user.email benchmark@localhost && "
                       "git config user.name benchmark && git add -A && "
                       "git -c core.hooksPath=/dev/null commit -qm base")

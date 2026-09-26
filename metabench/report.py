@@ -29,4 +29,15 @@ def report(rows):
         lines.append(f"| {escape(model)} | {escape(reasoning)} | {step if step is not None else 'N/A'} | {display} | {len(scored)} / {len(group)} | {critical} / {len(group)} | {eligible} |")
     lines += ["", "Trusted-local results validate the harness only; they are not isolated model benchmark results.",
               "No ranking or confidence claim is made for this pilot. Missing usage metadata remains null."]
+    lines += ["", "## Cumulative token usage at each checkpoint", "",
+              "Input includes cached input; output includes reasoning output. Total = input + output. Subsets are not added again. Each row sums the current checkpoint once per trajectory, not earlier cumulative checkpoints.", "",
+              "| Model | Reasoning | Step | Input | Cached input | Cache write | Output | Reasoning output | Total |",
+              "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"]
+    fields = ("input_tokens", "cached_input_tokens", "cache_write_input_tokens", "output_tokens", "reasoning_output_tokens", "total_tokens")
+    for (model, reasoning, step, _), group in sorted(grouped.items(), key=lambda x: str(x[0])):
+        values = []
+        for field in fields:
+            observed = [r.get("usage", {}).get(field) for r in group]
+            values.append(str(sum(observed)) if all(v is not None for v in observed) else "N/A")
+        lines.append(f"| {escape(model)} | {escape(reasoning)} | {step if step is not None else 'N/A'} | " + " | ".join(values) + " |")
     return "\n".join(lines) + "\n"

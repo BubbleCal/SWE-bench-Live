@@ -11,6 +11,10 @@ from .runtime import Workspace
 from .schema import digest, write_json
 
 
+def task_environment(environment, task_id):
+    return environment["by_task"][task_id] if "by_task" in environment else environment
+
+
 def run(suite, repo, environment, command, model, reasoning, budget, out, *, repeats=1, trusted_local=False):
     if repeats < 1 or any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) or v <= 0 for v in budget.values()):
         raise ValueError("all budgets and repeats must be positive")
@@ -21,7 +25,7 @@ def run(suite, repo, environment, command, model, reasoning, budget, out, *, rep
     if out.exists():
         raise ValueError("output exists; use a new run directory to preserve prior evidence")
     for task in suite["tasks"]:
-        if task["validation"]["environment_hash"] != digest(environment):
+        if task["validation"]["environment_hash"] != digest(task_environment(environment, task["instance_id"])):
             raise ValueError("environment differs from the one used to validate the task")
         if task["validation"]["environment"]["backend"] != ("trusted-local" if trusted_local else "docker"):
             raise ValueError("validation and execution backends must match")
@@ -37,13 +41,14 @@ def run(suite, repo, environment, command, model, reasoning, budget, out, *, rep
     rows = []
     adapter = CommandModel(command, model, reasoning)
     for task in suite["tasks"]:
+        runtime_environment = task_environment(environment, task["instance_id"])
         for repeat in range(repeats):
             folder = out / task["instance_id"] / str(repeat)
             folder.mkdir(parents=True)
             try:
-                with Workspace(repo, task, environment, trusted_local=trusted_local) as workspace:
-                    for setup in environment.get("agent_setup", []):
-                        workspace.must(setup, environment.get("setup_timeout", 1800))
+                with Workspace(repo, task, runtime_environment, trusted_local=trusted_local) as workspace:
+                    for setup in runtime_environment.get("agent_setup", []):
+                        workspace.must(setup, runtime_environment.get("setup_timeout", 1800))
                     snapshots = trajectory(workspace, task, adapter, budget, folder)
                     runtime_identity = workspace.identity
             except Exception as error:
@@ -62,7 +67,7 @@ def run(suite, repo, environment, command, model, reasoning, budget, out, *, rep
                             "patch_hash": digest(patch), **snapshot,
                             "score_eligible": runtime_identity["score_eligible"]}
                 try:
-                    result = evaluate(repo, task, patch, environment, trusted_local=trusted_local)
+                    result = evaluate(repo, task, patch, runtime_environment, trusted_local=trusted_local)
                     row = {**identity, **result}
                 except Exception as error:
                     row = {**identity, "status": "evaluation_error", "score": None, "error": str(error)}

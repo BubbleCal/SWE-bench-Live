@@ -1,11 +1,11 @@
 """A small agent loop with a provider-neutral JSON model adapter."""
 
 import json
-import math
 import time
 
 from .process import execute
 from .schema import public_task, write_json
+from . import usage as counters
 
 SYSTEM = """You are solving a software engineering task in a repository.
 Return exactly one JSON action: {\"command\": \"shell command\"} to inspect, edit, or test,
@@ -37,24 +37,21 @@ class CommandModel:
             raise ValueError("model action must be an object")
         if not ((set(action) == {"command"} and isinstance(action["command"], str)) or action == {"submit": True}):
             raise ValueError("model must return one command or submit action")
-        usage = response.get("usage", {})
-        if not isinstance(usage, dict):
-            raise ValueError("model usage must be an object")
-        for key in ("input_tokens", "output_tokens", "cost_usd"):
-            value = usage.get(key)
-            if value is not None and (isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0):
-                raise ValueError("invalid model usage metadata")
+        usage = counters.normalize(response.get("usage", {}))
+        self.last_metadata = response.get("provider", {})
         return action, usage
 
 
 def trajectory(workspace, task, model, budget, out):
-    messages = [{"role": "system", "content": SYSTEM},
+    runtime_notes = workspace.environment.get("agent_instructions", "")
+    messages = [{"role": "system", "content": SYSTEM + "\n" + runtime_notes},
                 {"role": "user", "content": json.dumps(public_task(task))}]
     snapshots = []
-    usage = {"input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0}
+    usage = counters.empty()
     calls = 0
     start = time.monotonic()
     for step in range(1, budget["max_steps"] + 1):
+        step_usage = counters.empty()
         status = "round_budget_exhausted"
         round_start = time.monotonic()
         for _ in range(budget["max_calls_per_step"]):
@@ -66,10 +63,15 @@ def trajectory(workspace, task, model, budget, out):
                 action, increment = model.invoke(messages, remaining)
             except (RuntimeError, ValueError) as error:
                 status = "agent_error"
+                # A failed/timed-out request may still consume provider tokens.
+                usage = counters.add(usage, counters.normalize({}))
+                step_usage = counters.add(step_usage, counters.normalize({}))
                 write_json(out / f"error-{step}.json", {"error": str(error)})
                 break
-            for key in usage:
-                usage[key] = usage[key] + increment[key] if usage[key] is not None and increment.get(key) is not None else None
+            usage = counters.add(usage, increment)
+            step_usage = counters.add(step_usage, increment)
+            write_json(out / f"usage-call-{calls}.json", {"step": step, "agent_step": calls, "usage": increment,
+                                                        "provider": getattr(model, "last_metadata", {})})
             messages.append({"role": "assistant", "content": json.dumps(action)})
             if action.get("submit"):
                 status = "submitted"
@@ -81,10 +83,12 @@ def trajectory(workspace, task, model, budget, out):
             messages.append({"role": "user", "content": json.dumps({**execution, "output": execution["output"][-budget["max_tool_output"]:]})})
         patch = workspace.snapshot()
         row = {"step": step, "agent_steps": calls, "status": status, "usage": dict(usage),
+               "step_usage": step_usage,
                "seconds": time.monotonic() - start, "patch": patch}
         snapshots.append(row)
         (out / f"step-{step}.patch").write_text(patch)
         write_json(out / f"trajectory-{step}.json", messages)
+        write_json(out / f"checkpoint-{step}.json", {key: value for key, value in row.items() if key != "patch"})
         # Never feed held-out evaluations or reference code back to the model.
         messages.append({"role": "user", "content": "Review your current solution against the original requirements. Run relevant public tests, improve it if needed, and submit again."})
         if status == "agent_error":

@@ -19,16 +19,17 @@ class DockerIntegrationTest(unittest.TestCase):
             subprocess.run(["git", "init", "-q", str(repo)], check=True)
             git(repo, "config", "user.email", "test@example.com")
             git(repo, "config", "user.name", "test")
-            (repo / "calc.py").write_text("answer = 0\n")
+            (repo / "pkg").mkdir()
+            (repo / "pkg/calc.py").write_text("answer = 0\n")
             git(repo, "add", "-A")
             git(repo, "commit", "-qm", "base")
             base = git(repo, "rev-parse", "HEAD")
-            (repo / "calc.py").write_text("answer = 42\n")
+            (repo / "pkg/calc.py").write_text("answer = 42\n")
             patch = subprocess.check_output(["git", "-C", str(repo), "diff"], text=True)
             task = {"instance_id": "docker-control", "repo": str(repo), "base_commit": base,
                     "problem_statement": "Set answer to 42.", "patch": patch,
                     "checks": [{"id": "answer", "dimension": "correctness", "critical": True,
-                                "command": "python -c 'from calc import answer; assert answer==42; print(\"OK\")'",
+                                "command": "python -c 'from pkg.calc import answer; assert answer==42; print(\"OK\")'",
                                 "success_pattern": "^OK$", "failure_pattern": "AssertionError"}],
                     "weights": {"correctness": 1}}
             env = {"image": os.environ["METABENCH_TEST_IMAGE"]}
