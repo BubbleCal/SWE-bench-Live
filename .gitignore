@@ -440,3 +440,7 @@ MANIFEST
 **/.env
 **/tokens.txt
 **/*config.json
+
+# Meta-bench local environments and private benchmark artifacts
+.venv/
+.metabench/

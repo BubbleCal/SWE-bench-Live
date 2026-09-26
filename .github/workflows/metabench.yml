@@ -1,0 +1,26 @@
+name: meta-bench
+on:
+  push:
+    paths: ['metabench/**', 'tests/**', 'examples/metabench/**', '.github/workflows/metabench.yml']
+  pull_request:
+    paths: ['metabench/**', 'tests/**', 'examples/metabench/**', '.github/workflows/metabench.yml']
+permissions:
+  contents: read
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.12', '3.14']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: python -m venv .venv
+      - run: .venv/bin/python -m unittest discover -s tests -v
+      - run: docker build -t metabench-python -f examples/metabench/python.Dockerfile .
+      - name: Docker integration
+        run: |
+          METABENCH_TEST_IMAGE=$(docker image inspect metabench-python --format '{{.Id}}') \
+            .venv/bin/python -m unittest discover -s tests -p '*docker.py' -v

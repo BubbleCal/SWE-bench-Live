@@ -1,3 +1,5 @@
+> **Personal meta-benchmark fork:** see [MetaBench.md](MetaBench.md) for repo-specific task generation, iterative agent runs, and multidimensional scores. This extension is maintained independently of Microsoft.
+
 <p align="center">
   <a href="http://swe-bench-live.github.io">
     <img src="assets/banner.png" style="height: 10em" alt="swe-bench-live" />

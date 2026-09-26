@@ -1,0 +1,7 @@
+{
+  "max_steps": 5,
+  "max_calls_per_step": 40,
+  "seconds_per_step": 600,
+  "tool_timeout": 120,
+  "max_tool_output": 16000
+}

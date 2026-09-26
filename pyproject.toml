@@ -80,6 +80,9 @@ docs = [
     "mkdocs-include-markdown-plugin",
 ]
 
+[project.scripts]
+metabench = "metabench.__main__:main"
+
 [tool.setuptools]
 include-package-data = true
 
