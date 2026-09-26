@@ -30,7 +30,7 @@ def run(suite, repo, environment, command, model, reasoning, budget, out, *, rep
                      "adapter_command": command, "budget": budget, "environment": environment,
                      "repeats": repeats, "trusted_local": trusted_local,
                      "harness_version": "0.1.0", "host_platform": platform.platform(),
-                     "harness_hash": digest({p.name: p.read_text() for p in Path(__file__).parent.glob("*.py")}),
+                     "harness_hash": digest({p.name: p.read_bytes().hex() for p in Path(__file__).parent.glob("*.py") if not p.name.startswith(".")}),
                      "adapter_file_hashes": {arg: digest(Path(arg).read_bytes().hex()) for arg in command if Path(arg).is_file()}}
     config_id = digest(configuration)
     write_json(out / "run.json", {**configuration, "config_id": config_id, "started_at": time.time()})
