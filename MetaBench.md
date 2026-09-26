@@ -104,6 +104,11 @@ Write patterns that establish the expected test identities/counts. A failure pat
 must distinguish the intended failing test from a compiler/import error or missing tool.
 Validation will not accept an arbitrary failing command as a reproduced bug.
 
+If a model request reaches the round deadline, the runner snapshots the current candidate
+and proceeds to the next allowed round. The timed-out request's unreported usage stays
+unknown; later rounds still retain their own incremental usage. A deadline does not
+silently terminate the remaining submission rounds.
+
 The environment file identifies an already prepared **toolchain-only** Docker image by
 digest or local image ID, plus resource limits and optional build commands:
 

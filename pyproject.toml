@@ -42,6 +42,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+reports = [
+    "matplotlib>=3.10,<4",
+]
 datasets = [
     "protobuf",
     "sentencepiece",
