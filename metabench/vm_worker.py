@@ -15,6 +15,7 @@ from pathlib import Path
 from .evaluate import evaluate_workspace
 from .process import execute
 from .runtime import RuntimeErrorWithLog
+from .verification import append_to_index
 
 VM_LOCK = Path("/tmp/metabench-vm.lock")
 
@@ -135,9 +136,9 @@ class CachedWorkspace:
         if patch.strip():
             must(["git", "-C", str(self.root), "apply", "--index", "--whitespace=nowarn", "-"], input=patch)
 
-    def prepare(self, patches):
+    def prepare(self, patches, verification_append=None):
         state_path = self.directory / (self.lane + ".source.json")
-        key = hashlib.sha256(json.dumps([self.base, patches]).encode()).hexdigest()
+        key = hashlib.sha256(json.dumps([self.base, patches, verification_append]).encode()).hexdigest()
         state = json.loads(state_path.read_text()) if state_path.exists() else {}
         tree = must(["git", "-C", str(self.root), "write-tree"])["output"].strip()
         clean = execute(["git", "-C", str(self.root), "diff", "--quiet"])["returncode"] == 0
@@ -157,6 +158,8 @@ class CachedWorkspace:
                 for patch in patches:
                     if patch.strip():
                         must(["git", "-C", str(self.root), "apply", "--cached", "--whitespace=nowarn", "-"], input=patch, env=env)
+                if verification_append:
+                    append_to_index(self.root, verification_append, env)
                 desired = must(["git", "-C", str(self.root), "write-tree"], env=env)["output"].strip()
             must(["git", "-C", str(self.root), "read-tree", "-m", "-u", tree, desired])
             write(state_path, {"key": key, "tree": desired})
@@ -203,7 +206,8 @@ def run(root, job_dir):
                 execution = workspace.command(request["command"], request.get("timeout", 1800))
                 result = {"kind": "public", "execution": execution, "environment": workspace.identity}
             else:
-                workspace.prepare([request["patch"], request["task"].get("test_patch", "")])
+                workspace.prepare([request["patch"], request["task"].get("test_patch", "")],
+                                  request["task"].get("verification_append"))
                 result = evaluate_workspace(request["task"], request["patch"], request["environment"], workspace, patches_applied=True)
                 result["kind"] = "verify"
         except Exception as error:

@@ -29,8 +29,7 @@ assertion. It is a reviewed historical pilot, not a representative Lance benchma
 
 Future-requirement replay, subjective code review scores, automatic task-family sampling,
 confidence intervals, model rankings, and token/cost enforcement are not implemented yet.
-No placeholder score is assigned to an unsupported dimension. The native runner limits user-level conversation rounds, with an optional round
-timeout. CLI tool iteration and context management remain native. Queue wait and VM
+No placeholder score is assigned to an unsupported dimension. The native runner defaults to at most **4 user-level conversation rounds**, with a **900-second (15-minute) wall-clock budget per round**. Set `max_rounds` and `round_timeout_seconds` in the matrix to override these defaults; explicit `null` disables the deadline. The resolved defaults are frozen in the run manifest. CLI tool iteration and context management remain native. Queue wait and VM
 execution times are recorded separately; token counters remain observations.
 
 ## Setup
@@ -237,6 +236,14 @@ Hidden verification starts after that trial's complete trajectory; its results h
 agent-facing endpoint. Public and verification lanes have separate Git databases and
 container filesystems, preventing hidden test objects from entering a reused public cache.
 
+Tasks whose hidden tests live in the same files the agent edits can freeze a
+`verification_append` mapping from source path to `{ "source": "...", "namespace": "..." }`
+instead of `test_patch`. The verifier appends that fixed sibling module after the
+candidate's exact bytes, preserving candidate-written tests. The reserved namespace,
+test commands and any public-API facade are part of the validated task fingerprint.
+Validate base/reference controls again after changing this transport. Private helper
+signatures are not public compatibility contracts.
+
 VM layout and locking:
 
 ```text
@@ -248,7 +255,7 @@ VM layout and locking:
 ```
 
 VM workers detach from SSH before taking the kernel lock. That lock covers source
-source synchronization, setup, compilation, tests and process cleanup. Disconnecting a local
+synchronization, setup, compilation, tests and process cleanup. Disconnecting a local
 controller does not release the remote lock. A new worker fences surviving owned
 containers before running tests. Containers are stopped between jobs but retained;
 compiler output such as `/build-cache/target` survives while source is updated to the

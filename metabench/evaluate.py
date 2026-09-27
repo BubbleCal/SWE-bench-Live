@@ -7,6 +7,7 @@ import time
 
 from .runtime import Workspace, RuntimeErrorWithLog
 from .schema import task_fingerprint, validate_task, write_json, digest
+from .verification import install_in_workspace
 
 
 def summarize(task, results):
@@ -35,6 +36,8 @@ def evaluate_workspace(task, patch, environment, workspace, *, patches_applied=F
         if not patches_applied:
             workspace.apply(patch)
             workspace.apply(task.get("test_patch", ""))
+            if task.get("verification_append"):
+                install_in_workspace(workspace, task["verification_append"])
     except RuntimeErrorWithLog as error:
         # A candidate which conflicts with the fixed tests is a reviewable failure,
         # not grounds for silently adapting the tests to that candidate.

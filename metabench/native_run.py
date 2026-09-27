@@ -37,7 +37,8 @@ def run_matrix(suite, repo, environments, matrix, out, *, vm_count=None, paralle
     agents, vms = matrix["agents"], matrix["vms"]
     if not isinstance(agents, list) or not isinstance(vms, list):
         raise ValueError("agents and vms must be lists")
-    rounds = matrix.get("max_rounds", 5)
+    matrix = {"max_rounds": 4, "round_timeout_seconds": 900, **matrix}
+    rounds = matrix["max_rounds"]
     repeats = matrix.get("repeats", 1)
     count = vm_count if vm_count is not None else matrix.get("vm_count", len(vms))
     if not agents or not isinstance(rounds, int) or isinstance(rounds, bool) or rounds < 1 or not isinstance(repeats, int) or repeats < 1:
@@ -70,7 +71,7 @@ def run_matrix(suite, repo, environments, matrix, out, *, vm_count=None, paralle
                      "native_cli": identities,
                      "execution_source_hash": digest({name: Path(__file__).with_name(name).read_text() for name in (
                          "native_run.py", "native_cli.py", "checkouts.py", "queue.py", "test_service.py", "test_mcp.py",
-                         "vm_pool.py", "vm_worker.py", "evaluate.py", "process.py", "usage.py", "schema.py")})}
+                         "vm_pool.py", "vm_worker.py", "verification.py", "evaluate.py", "process.py", "usage.py", "schema.py")})}
     experiment = digest(configuration)
     if out.exists() and not resume:
         raise ValueError("output exists; use --resume for this exact matrix")

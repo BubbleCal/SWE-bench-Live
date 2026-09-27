@@ -37,8 +37,8 @@ class NativeMatrixTest(unittest.TestCase):
             suite=freeze([task,second]);matrix={'agents':[
                 {'provider':'codex','model':'control-a','reasoning':'high'},
                 {'provider':'claude','model':'control-b','reasoning':'high'}],
-                'vms':[{'id':'vm-a'},{'id':'vm-b'}],'max_rounds':2}
-            control_lock=threading.Lock();calls=[];sessions={};running=[0,0];prepared=[]
+                'vms':[{'id':'vm-a'},{'id':'vm-b'}]}
+            control_lock=threading.Lock();calls=[];sessions={};rounds={};running=[0,0];prepared=[]
             increment=normalize({'input_tokens':10,'cached_input_tokens':4,'cache_write_input_tokens':0,
                                  'output_tokens':5,'reasoning_output_tokens':2})
 
@@ -52,6 +52,8 @@ class NativeMatrixTest(unittest.TestCase):
                     return evaluate(repo,job['payload']['task'],job['payload']['patch'],{},trusted_local=True)
 
             def native(spec,worktree,prompt,out,**options):
+                self.assertEqual(options['timeout'],900)
+                step=rounds.get(str(worktree),0)+1;rounds[str(worktree)]=step
                 self.assertEqual(set(prepared),{'vm-a','vm-b'})
                 self.assertNotIn('HIDDEN_MARKER',prompt)
                 self.assertNotIn('critical_pass',prompt)
@@ -64,14 +66,15 @@ class NativeMatrixTest(unittest.TestCase):
                         self.assertIsNone(options['previous_usage'])
                     else:
                         self.assertEqual(options['session_id'],sessions[str(worktree)])
-                        if spec['provider']=='codex':self.assertEqual(options['previous_usage'],increment)
+                        if spec['provider']=='codex':self.assertEqual(options['previous_usage']['total_tokens'],15*(step-1))
                         (worktree/'calc.py').write_text('def add(a,b):\n    return a+b\n')
                     config=json.loads(Path(options['mcp_path']).read_text())['mcpServers']['bench']['args']
                     url=config[config.index('--url')+1];token=Path(config[config.index('--token-file')+1]).read_text()
                     job=request(url+'/test',token,{'command':'public check'})['job_id']
                     while request(url+'/jobs/'+job,token)['status']!='completed':time.sleep(.01)
                     Path(out).mkdir()
-                    cumulative=increment if options['session_id'] is None else add(increment,increment)
+                    cumulative=increment
+                    for _ in range(step-1):cumulative=add(cumulative,increment)
                     return {'session_id':sessions[str(worktree)],'usage':increment,'status':'submitted','seconds':.1,
                             'provider':{'session_usage':cumulative} if spec['provider']=='codex' else {}}
                 finally:
@@ -80,12 +83,12 @@ class NativeMatrixTest(unittest.TestCase):
             out=root/'run'
             with patch('metabench.native_run.cli_identity',return_value={'version':'control'}):
                 rows=run_matrix(suite,repo,env,matrix,out,parallel=4,driver_factory=Driver,agent_runner=native)
-                self.assertEqual(len(rows),8);self.assertEqual(len(sessions),4);self.assertGreater(running[1],1)
-                for step in (1,2):self.assertEqual({r['score'] for r in rows if r['step']==step},{0 if step==1 else 100})
-                self.assertEqual({r['usage']['total_tokens'] for r in rows if r['step']==2},{30})
+                self.assertEqual(len(rows),16);self.assertEqual(len(sessions),4);self.assertGreater(running[1],1)
+                for step in range(1,5):self.assertEqual({r['score'] for r in rows if r['step']==step},{0 if step==1 else 100})
+                self.assertEqual({r['usage']['total_tokens'] for r in rows if r['step']==4},{60})
                 self.assertTrue((out/'report.html').exists())
                 resumed=run_matrix(suite,repo,env,matrix,out,parallel=4,resume=True,driver_factory=Driver,agent_runner=native)
-                self.assertEqual(len(calls),8);self.assertEqual(len(resumed),8)
+                self.assertEqual(len(calls),16);self.assertEqual(len(resumed),16)
                 with self.assertRaisesRegex(ValueError,'configuration changed'):
                     run_matrix(suite,repo,env,matrix,out,parallel=1,resume=True,driver_factory=Driver,agent_runner=native)
 

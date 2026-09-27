@@ -6,6 +6,8 @@ import math
 import re
 from pathlib import Path
 
+from .verification import validate_append
+
 VERSION = 1
 DIMENSIONS = {"correctness", "regression", "compatibility", "performance"}
 
@@ -35,6 +37,9 @@ def validate_task(task):
         raise ValueError("base_commit must be a full commit hash")
     if not isinstance(task.get("test_patch", ""), str):
         raise ValueError("test_patch must be a string")
+    validate_append(task.get("verification_append", {}))
+    if task.get("verification_append") and task.get("test_patch", "").strip():
+        raise ValueError("use either test_patch or verification_append")
     checks = task.get("checks", [])
     if not checks:
         raise ValueError("task requires executable checks")

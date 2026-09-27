@@ -7,8 +7,8 @@
     {"provider": "claude", "model": "claude-opus-5-5", "reasoning": "xhigh"},
     {"provider": "claude", "model": "claude-opus-5-5", "reasoning": "max"}
   ],
-  "max_rounds": 5,
-  "round_timeout_seconds": null,
+  "max_rounds": 4,
+  "round_timeout_seconds": 900,
   "test_timeout_seconds": 1800,
   "vm_count": 1,
   "vms": [
