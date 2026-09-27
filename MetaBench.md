@@ -203,6 +203,29 @@ native tool events invalidate the invocation. Set `METABENCH_PROVIDER_LOG_DIR` t
 the raw provider event streams. This is a fixed Codex CLI inference wrapper, not a claim
 of equivalence to direct API requests or the full Codex coding-agent product.
 
+`examples/metabench/claude_model.py` uses saved local Claude Code subscription
+authentication with the same decision prompt and schema. Supply the full model ID and
+an explicit effort; `METABENCH_CLAUDE` can pin a particular installed CLI executable.
+It disables user customizations and native tools except the `StructuredOutput` formatter,
+rejects model fallback and subagent activity, and requires one completed provider request
+per decision. Claude Code may count the local formatting turn in `num_turns`; the adapter
+checks the provider iteration ledger and message identity instead. The CLI remains on
+the host, while returned commands run in the benchmark container.
+
+For example, an adapter JSON file can contain
+`["/absolute/path/to/.venv/bin/python", "/absolute/path/to/examples/metabench/claude_model.py"]`.
+Run a small authenticated preflight with the requested model/effort before starting a
+campaign. Authentication errors (including an account hold) are infrastructure failures,
+not model scores; do not silently change models or efforts to recover.
+
+Claude usage needs an explicit conversion: its raw `input_tokens` excludes cache reads
+and writes. The adapter's inclusive input count is `input_tokens + cache_read_input_tokens
++ cache_creation_input_tokens`, following the [provider usage definition](https://platform.claude.com/docs/en/build-with-claude/prompt-caching).
+Thinking tokens are recorded only when the provider reports them. The CLI's dollar value
+is retained as `estimated_api_cost_usd` metadata; it is not treated as a subscription bill.
+The [CLI reference](https://code.claude.com/docs/en/cli-reference) documents print mode,
+effort, safe mode, tool restrictions and structured output.
+
 The runner stores per-call usage, each round's incremental `step_usage`, and cumulative
 `usage`. Counters include input, cached input, cache-write input, output and reasoning
 output tokens where provided. Cached input is a subset of input, and reasoning output is
