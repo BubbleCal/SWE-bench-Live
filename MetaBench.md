@@ -158,12 +158,29 @@ does not certify arbitrary third-party images as free of historical code or secr
   --budget examples/metabench/budget.json --repeats 3 --out .metabench/run-001
 
 .venv/bin/python -m metabench report \
-  .metabench/run-001/results.jsonl --out .metabench/report.md
+  .metabench/run-001/results.jsonl --out .metabench/report.html
+
+# Re-read the configured result files every 5 seconds in a local browser.
+.venv/bin/python -m metabench dashboard \
+  .metabench/run-001/results.jsonl .metabench/run-002/results.jsonl --port 8765
 ```
 
-`run` automatically writes `report.md` and `report.charts/` in its output directory.
-To compare configurations, pass their JSONL files together to `report`; every figure
-uses the same model/reasoning series styles. No extra plotting switch is needed.
+`report --out report.html` creates a standalone interactive report without external
+libraries or network dependencies. It has one chart per dimension, model/effort
+checkboxes, task selection, checkpoint details, coverage and cumulative token usage.
+`dashboard` serves the same view at `http://127.0.0.1:8765/`, reloading source files
+on refresh; it retains the last valid browser snapshot if a file is partially written
+or unavailable. Selections persist locally. Downloading a snapshot produces an
+offline HTML file; it does not continue polling the local server.
+
+`run` automatically writes `report.html`, `report.md` and `report.charts/` in its
+output directory. Explicit Markdown reports retain PNG/SVG exports and link to the
+interactive HTML. To compare configurations, pass their JSONL files together;
+configuration hashes and frozen suite checks still apply. The live viewer binds
+only to loopback and exposes no file browser. Optional `--metadata status.json`
+accepts `title`, `subtitle`, `phase`, `note`, `updated_at` and a `progress` object
+with `planned`, `generated`, `functional`, `performance`, and `evolution` counters.
+Result producers must publish their updates; the viewer does not run or grade models.
 
 Validation requires repeatable target failures on the base, passing reference checks,
 and usable environments. Changed task content or environment configuration requires new

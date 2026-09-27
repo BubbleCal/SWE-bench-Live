@@ -33,9 +33,13 @@ def main():
     run.add_argument("--reasoning", required=True)
     run.add_argument("--repeats", type=int, default=1)
     run.add_argument("--trusted-local", action="store_true")
-    report = sub.add_parser("report", help="render tables and one score-vs-round figure per dimension")
+    report = sub.add_parser("report", help="render interactive HTML, or Markdown with image exports")
     report.add_argument("results", nargs="+", type=Path)
     report.add_argument("--out", type=Path, required=True)
+    dashboard = sub.add_parser("dashboard", help="serve live, filterable results on localhost")
+    dashboard.add_argument("results", nargs="+", type=Path)
+    dashboard.add_argument("--port", type=int, default=8765)
+    dashboard.add_argument("--metadata", type=Path, help="optional JSON with title, phase, note and progress")
     live = sub.add_parser("grade-live", help="strictly grade a SWE-bench-Live status map")
     live.add_argument("--task", type=Path, required=True)
     live.add_argument("--status", type=Path, required=True)
@@ -69,6 +73,9 @@ def main():
             from .report import write_report
             rows = [json.loads(line) for path in args.results for line in path.read_text().splitlines() if line.strip()]
             write_report(rows, args.out)
+        elif args.operation == "dashboard":
+            from .dashboard import serve_dashboard
+            serve_dashboard(args.results, port=args.port, metadata_path=args.metadata)
         elif args.operation == "grade-live":
             from .evaluate import grade_live_status
             write_json(args.out, grade_live_status(read_json(args.task), read_json(args.status)))

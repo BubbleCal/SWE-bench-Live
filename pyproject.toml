@@ -89,6 +89,9 @@ metabench = "metabench.__main__:main"
 [tool.setuptools]
 include-package-data = true
 
+[tool.setuptools.package-data]
+metabench = ["dashboard.html"]
+
 [tool.setuptools.packages.find]
 where = ["."]
 namespaces = false

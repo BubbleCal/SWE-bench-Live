@@ -49,12 +49,15 @@ def report(rows):
 
 
 def write_report(rows, out):
-    """Write tables and, by default, a separate PNG/SVG for every score dimension."""
+    """Write interactive HTML; retain Markdown and image exports when requested."""
     from .charts import chart_data, render_charts
+    from .dashboard import write_dashboard
 
+    out = Path(out)
+    if out.suffix.lower() == ".html":
+        return write_dashboard(rows, out)
     data = chart_data(rows)
     markdown = report(rows)
-    out = Path(out)
     assets = out.with_name(out.stem + ".charts")
     out.parent.mkdir(parents=True, exist_ok=True)
     old_files = set()
@@ -64,6 +67,7 @@ def write_report(rows, out):
         if old.get("generator") == data["generator"]:
             old_files = {chart[fmt] for chart in old["charts"] for fmt in ("png", "svg")}
     lines = ["## Scores by dimension", "",
+             f"[Interactive report with model filters]({quote(out.with_suffix('.html').name)})", "",
              "Each dimension has its own figure: submission round on x, score on y; model/reasoning configurations share consistent styles. Configuration hashes are never pooled.", "",
              "Means average repeats within each task before averaging tasks. Missing or ineligible checkpoints are gaps. Coverage is recorded in every figure and in the chart data.", ""]
     if not data["charts"]:
@@ -78,6 +82,7 @@ def write_report(rows, out):
     # not leave a new Markdown report pointing at incomplete figures.
     with tempfile.TemporaryDirectory(prefix="metabench-report-", dir=out.parent) as temp:
         staged = Path(temp)
+        write_dashboard(rows, staged / "interactive.html")
         render_charts(data, staged)
         (staged / "chart-data.json").write_text(json.dumps(data, indent=2, allow_nan=False) + "\n")
         (staged / "report.md").write_text(markdown + "\n" + "\n".join(lines))
@@ -85,6 +90,7 @@ def write_report(rows, out):
         new_files = {chart[fmt] for chart in data["charts"] for fmt in ("png", "svg")}
         for filename in [*sorted(new_files), "chart-data.json"]:
             os.replace(staged / filename, assets / filename)
+        os.replace(staged / "interactive.html", out.with_suffix(".html"))
         os.replace(staged / "report.md", out)
         # Only retire image files named by our previous generated manifest.
         for filename in old_files - new_files:
