@@ -3,16 +3,32 @@ import argparse
 import json
 import sys
 import time
+import uuid
+from http.client import HTTPException
 from pathlib import Path
-from urllib.error import HTTPError
-from urllib.request import Request, urlopen
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, build_opener, ProxyHandler
+
+OPENER = build_opener(ProxyHandler({}))  # Trial capabilities only travel over loopback.
 
 
 def request(url, token, body=None):
+    if body is not None:
+        body = {**body, "request_id": body.get("request_id", uuid.uuid4().hex)}
     data = json.dumps(body).encode() if body is not None else None
     req = Request(url, data=data, headers={"Authorization": "Bearer " + token, "Content-Type": "application/json"})
-    with urlopen(req, timeout=120 if body is not None else 30) as response:
-        return json.load(response)
+    for attempt in range(6):
+        try:
+            with OPENER.open(req, timeout=120 if body is not None else 30) as response:
+                return json.load(response)
+        except HTTPError:
+            raise  # Authorization and validation failures are not transient.
+        except (URLError, OSError, HTTPException):
+            if attempt == 5:
+                raise
+            # POST retries retain their identity and original immutable snapshot,
+            # including when the server accepted a job but its reply was lost.
+            time.sleep(.1 * 2 ** attempt)
 
 
 def main():

@@ -1,10 +1,18 @@
 """A trial-scoped public test gateway. Hidden grading has no HTTP endpoint."""
 import json
+import hashlib
+import re
 import secrets
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
+
+
+class GatewayServer(ThreadingHTTPServer):
+    # Fifteen native agents can poll simultaneously. The stdlib backlog of five
+    # resets bursts of loopback connections on macOS before a handler sees them.
+    request_queue_size = 128
 
 
 class TestService:
@@ -48,18 +56,33 @@ class TestService:
                     request = json.loads(self.rfile.read(length))
                     command = request["command"]
                     timeout = request.get("timeout", trial["test_timeout"])
+                    request_id = request.get("request_id")
+                    if request_id is not None and (not isinstance(request_id, str) or not re.fullmatch(r"[0-9a-f]{32}", request_id)):
+                        raise ValueError("invalid request identity")
                     if not isinstance(command, str) or not command.strip():
                         raise ValueError("test command must be nonempty")
                     if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not 0 < timeout <= trial["test_timeout"]:
                         raise ValueError("invalid test timeout")
                     with trial["lock"]:
+                        identity = hashlib.sha256((trial["id"] + ":" + request_id).encode()).hexdigest()[:32] if request_id else None
+                        if identity:
+                            try:
+                                existing = service.queue.get(identity)
+                            except KeyError:
+                                existing = None
+                            if existing:
+                                if (existing["trial_id"] != trial["id"] or existing["kind"] != "public"
+                                        or existing["payload"]["command"] != command or existing["payload"]["timeout"] != timeout):
+                                    raise ValueError("request identity already belongs to different work")
+                                self.send(202, {"job_id": identity, "status": existing["status"]})
+                                return
                         if trial["sealed"]:
                             self.send(409, {"error": "trial generation is complete; public tests are closed"})
                             return
                         patch = trial["checkout"].snapshot()
                         job = service.queue.enqueue(trial["id"], trial["vm"], "public", {
                             "base_archive": str(trial["base_archive"]), "environment": trial["environment"],
-                            "patch": patch, "command": command, "timeout": timeout})
+                            "patch": patch, "command": command, "timeout": timeout}, job_id=identity)
                     self.send(202, {"job_id": job, "status": "queued"})
                 except (ValueError, KeyError, OSError) as error:
                     self.send(400, {"error": str(error)})
@@ -92,7 +115,7 @@ class TestService:
             def log_message(self, *_):
                 pass
 
-        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.server = GatewayServer(("127.0.0.1", 0), Handler)
         self.url = f"http://127.0.0.1:{self.server.server_port}"
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
