@@ -36,9 +36,12 @@ def parse_response(events, model):
     if len(results) != 1:
         raise RuntimeError("expected one Claude CLI result")
     result = results[0]
-    if result.get("is_error") or result.get("terminal_reason") == "api_error":
+    format_limit = (result.get("subtype") == "error_max_turns"
+                    and result.get("terminal_reason") == "max_turns"
+                    and result.get("stop_reason") == "end_turn")
+    if (result.get("is_error") and not format_limit) or result.get("terminal_reason") == "api_error":
         raise RuntimeError("Claude CLI: " + str(result.get("result") or result.get("errors") or result.get("subtype")))
-    if result.get("subtype") != "success":
+    if result.get("subtype") != "success" and not format_limit:
         raise RuntimeError("expected a successful Claude decision")
     # StructuredOutput adds a local formatting/tool turn to CLI num_turns. The
     # provider iteration ledger, not that counter, identifies model requests.
@@ -72,6 +75,24 @@ def parse_response(events, model):
     if set(models) != {model}:
         raise RuntimeError("expected usage from only the requested model")
     output = result.get("structured_output")
+    source = "structured_output"
+    if format_limit:
+        blocks = [block for message in messages for block in message.get("content", [])]
+        text = "".join(block.get("text", "") for block in blocks if block.get("type") == "text").strip()
+        if any(block.get("type") == "tool_use" for block in blocks) or not text:
+            raise RuntimeError("turn limit without a completed native text response")
+        try:
+            output = json.loads(text)
+            source = "json_text"
+        except json.JSONDecodeError:
+            # A native final answer ends the agent turn: submit the actual
+            # workspace, never extract/execute commands from narrative text.
+            output = {"command": None, "submit": True}
+            source = "native_final_text"
+    if isinstance(output, dict) and set(output) == {"submit"} and output["submit"] is True:
+        output = {"command": None, "submit": True}
+    elif isinstance(output, dict) and set(output) == {"command"} and isinstance(output["command"], str):
+        output = {"command": output["command"], "submit": False}
     if not isinstance(output, dict) or set(output) != {"command", "submit"}:
         raise RuntimeError("missing structured decision")
     if output["submit"] is True and output["command"] is None:
@@ -80,7 +101,7 @@ def parse_response(events, model):
         action = {"command": output["command"]}
     else:
         raise RuntimeError("decision must contain exactly one command or submission")
-    return action, normalized_usage(result.get("usage", {})), result
+    return action, normalized_usage(result.get("usage", {})), {**result, "decision_source": source}
 
 
 def invocation(binary, model, effort):
@@ -114,12 +135,14 @@ def main():
                                    "events": events, "stderr": completed.stderr, "returncode": completed.returncode}, indent=2))
     # Prefer the provider's explicit failure over a generic process exit message.
     action, usage, result = parse_response(events, request["model"])
-    if completed.returncode:
+    if completed.returncode and result["decision_source"] not in ("native_final_text", "json_text"):
         raise RuntimeError("Claude CLI exited unsuccessfully: " + completed.stderr[-2000:])
     print(json.dumps({"action": action, "usage": usage,
                       "provider": {"kind": "claude-code-cli", "event_log": str(log) if log else None,
                                    "requested_effort": request["reasoning"], "num_turns": result["num_turns"],
                                    "provider_requests": 1,
+                                   "decision_source": result["decision_source"],
+                                   "cli_is_error": result.get("is_error"),
                                    "cli_version": next(e["claude_code_version"] for e in events if e.get("type") == "system" and e.get("subtype") == "init"),
                                    "raw_usage": result.get("usage"), "model_usage": result.get("modelUsage"),
                                    "estimated_api_cost_usd": result.get("total_cost_usd")}}))

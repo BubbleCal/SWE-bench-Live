@@ -1,5 +1,9 @@
 import importlib.util
+import json
+import os
+import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -16,7 +20,8 @@ sys.path.pop(0)
 def response():
     model = "claude-opus-5-5"
     return [{"type": "system", "subtype": "init", "model": model, "tools": ["StructuredOutput"], "mcp_servers": [],
-             "plugins": [{"name": "agents-md", "path": "builtin", "source": "agents-md@builtin"}]},
+             "plugins": [{"name": "agents-md", "path": "builtin", "source": "agents-md@builtin"}],
+             "claude_code_version": "2.1.281"},
             {"type": "assistant", "message": {"id": "msg-one", "model": model, "content": [{"type": "tool_use", "name": "StructuredOutput"}]}},
             {"type": "result", "subtype": "success", "is_error": False, "num_turns": 2,
              "modelUsage": {model: {}}, "structured_output": {"command": "cargo test", "submit": False},
@@ -49,6 +54,43 @@ class ClaudeAdapterTest(unittest.TestCase):
                  "terminal_reason": "api_error", "result": "Your account is on hold and can't use Claude Code."}
         with self.assertRaisesRegex(RuntimeError, "account is on hold"):
             adapter.parse_response([event], "claude-opus-5-5")
+
+    def test_native_end_turn_text_is_submission_without_another_model_request(self):
+        events = response()
+        events[1]["message"]["content"] = [{"type": "text", "text": "The implementation is finished."}]
+        events[-1].update(subtype="error_max_turns", is_error=True, terminal_reason="max_turns", stop_reason="end_turn")
+        del events[-1]["structured_output"]
+        action, usage, result = adapter.parse_response(events, "claude-opus-5-5")
+        self.assertEqual(action, {"submit": True})
+        self.assertEqual(result["decision_source"], "native_final_text")
+        self.assertEqual(usage["output_tokens"], 30)
+
+    def test_turn_limit_with_a_tool_action_is_not_submission(self):
+        events = response()
+        events[-1].update(subtype="error_max_turns", is_error=True, terminal_reason="max_turns", stop_reason="end_turn")
+        del events[-1]["structured_output"]
+        with self.assertRaises(RuntimeError):
+            adapter.parse_response(events, "claude-opus-5-5")
+
+    def test_adapter_accepts_native_completion_despite_formatter_exit_code(self):
+        events = response()
+        events[1]["message"]["content"] = [{"type": "text", "text": "Finished. You can run cargo test."}]
+        events[-1].update(subtype="error_max_turns", is_error=True, terminal_reason="max_turns", stop_reason="end_turn")
+        del events[-1]["structured_output"]
+        with tempfile.TemporaryDirectory() as folder:
+            cli = Path(folder) / "claude"
+            cli.write_text("#!/usr/bin/env python3\nimport json,sys\nfor event in json.loads(" + repr(json.dumps(events)) + "):\n print(json.dumps(event))\nsys.exit(1)\n")
+            cli.chmod(0o755)
+            env = dict(os.environ, METABENCH_CLAUDE=str(cli))
+            env.pop("METABENCH_PROVIDER_LOG_DIR", None)
+            result = subprocess.run([sys.executable, str(EXAMPLES / "claude_model.py")],
+                                    input=json.dumps({"model": "claude-opus-5-5", "reasoning": "high", "messages": []}),
+                                    text=True, capture_output=True, env=env)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            parsed = json.loads(result.stdout)
+            self.assertEqual(parsed["action"], {"submit": True})
+            self.assertEqual(parsed["provider"]["provider_requests"], 1)
+            self.assertEqual(parsed["provider"]["decision_source"], "native_final_text")
 
     def test_native_tools_fallback_and_extra_turns_are_rejected(self):
         variants = []

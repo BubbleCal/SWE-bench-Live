@@ -212,6 +212,12 @@ per decision. Claude Code may count the local formatting turn in `num_turns`; th
 checks the provider iteration ledger and message identity instead. The CLI remains on
 the host, while returned commands run in the benchmark container.
 
+If the model ends with native final text, the CLI may hit its turn cap while trying to
+add a formatting pass. A completed `end_turn` with one provider request and no tool call
+is treated as a submission of the current workspace. Valid JSON text retains its explicit
+action; commands are never inferred from prose. This avoids an extra model call just for
+formatting. Other CLI/provider failures still abort the invocation.
+
 For example, an adapter JSON file can contain
 `["/absolute/path/to/.venv/bin/python", "/absolute/path/to/examples/metabench/claude_model.py"]`.
 Run a small authenticated preflight with the requested model/effort before starting a
