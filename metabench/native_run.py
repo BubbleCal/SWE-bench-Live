@@ -181,6 +181,10 @@ def run_matrix(suite, repo, environments, matrix, out, *, vm_count=None, paralle
                           "Only use this worktree and the task statement. Do not inspect other trial directories or seek historical solutions. "
                           "The test VM has its own persistent build cache. Hidden scoring is not feedback.\n"
                           "Test VM context (not the local working directory):\n" + env.get("agent_instructions", "")) if step == 1 else CONTINUE
+                limit = matrix["round_timeout_seconds"]
+                prompt += (f"\nConversation round {step}/{rounds}. "
+                           + (f"This round has a {limit:g}-second wall-clock budget, including VM queue waits. " if limit is not None else "")
+                           + f"A public test command may request at most {matrix.get('test_timeout_seconds', 1800):g} seconds of VM execution.")
                 turn_dir = folder / f"turn-{step}"
                 if turn_dir.exists():
                     raise RuntimeError(f"{identity} turn {step} was interrupted before its checkpoint; inspect saved events before retrying")
