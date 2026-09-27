@@ -4,6 +4,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 from metabench.evaluate import evaluate, grade_live_status, validate
@@ -151,6 +152,20 @@ print(json.dumps({"action": action, "usage": {"input_tokens": 10, "cached_input_
         self.assertEqual(rows[-1]["step_usage"]["total_tokens"], 30)
         self.assertTrue(all(not r["score_eligible"] for r in rows))
         self.assertIn("scripted-control", report(rows))
+        self.assertTrue((self.root / "run/report.md").exists())
+        self.assertEqual(len(list((self.root / "run/report.charts").glob("*.png"))), 2)
+
+    def test_missing_report_dependency_fails_before_model_calls(self):
+        task = self.validated()
+        budget = {"max_steps": 1, "max_calls_per_step": 1, "seconds_per_step": 20,
+                  "tool_timeout": 5, "max_tool_output": 1000}
+        with patch("metabench.charts.plotting_backend", side_effect=RuntimeError("install reports")), \
+                patch.object(CommandModel, "invoke") as invoke:
+            with self.assertRaisesRegex(RuntimeError, "install reports"):
+                run(freeze([task]), self.repo, {}, ["not-called"], "test", "high", budget,
+                    self.root / "missing-reports", trusted_local=True)
+            invoke.assert_not_called()
+        self.assertFalse((self.root / "missing-reports").exists())
 
     def test_mining_preserves_reference_and_requires_validation(self):
         adapter = self.root / "curator.py"
@@ -194,6 +209,27 @@ print(json.dumps({"action": action, "usage": {"input_tokens": 10, "cached_input_
         self.assertIn("incomplete", report(rows))
         with self.assertRaisesRegex(ValueError, "same frozen suite"):
             report([*rows, {**rows[0], "suite_id": "other"}])
+
+    def test_cli_run_creates_dimension_report_without_a_separate_report_command(self):
+        task = self.validated()
+        adapter = self.root / "submit.py"
+        adapter.write_text('print(\'{"action": {"submit": true}}\')\n')
+        inputs = {"suite": freeze([task]), "environment": {}, "adapter": [sys.executable, str(adapter)],
+                  "budget": {"max_steps": 1, "max_calls_per_step": 1, "seconds_per_step": 20,
+                             "tool_timeout": 5, "max_tool_output": 1000}}
+        argv = [sys.executable, "-m", "metabench", "run", "--repo", str(self.repo), "--model", "scripted-control",
+                "--reasoning", "none", "--trusted-local", "--out", str(self.root / "cli-run")]
+        for name, value in inputs.items():
+            path = self.root / (name + ".json")
+            write_json(path, value)
+            argv += ["--" + name, str(path)]
+        result = subprocess.run(argv, text=True, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = self.root / "cli-run"
+        self.assertTrue((output / "report.md").exists())
+        data = json.loads((output / "report.charts/chart-data.json").read_text())
+        self.assertEqual({c["dimension"] for c in data["charts"]}, {"correctness", "regression"})
+        self.assertTrue(all(p["score"] is None for c in data["charts"] for ps in c["points"].values() for p in ps))
 
 
 if __name__ == "__main__":

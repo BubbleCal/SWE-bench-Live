@@ -2,8 +2,9 @@
 
 This fork adds a repository-specific evaluation workflow to SWE-bench-Live. It preserves
 the upstream curation, RepoLaunch environment construction, and evaluation commands.
-The new `metabench` package has no third-party runtime dependency; its optional model
-adapter uses RepoLaunch's existing LiteLLM dependency.
+The curation and evaluation core has no third-party runtime dependency. Reports use
+the `reports` extra (Matplotlib); the optional model adapter uses RepoLaunch's existing
+LiteLLM dependency.
 
 ## Scope of this version
 
@@ -16,6 +17,7 @@ adapter uses RepoLaunch's existing LiteLLM dependency.
 - Record `(model, reasoning, step, score)` with configuration, per-dimension evidence,
   cumulative model calls, reported token usage, cost, elapsed time, and patch identity.
 - Score correctness, regressions, explicit compatibility checks, and measured performance.
+- Automatically produce one score-vs-round figure per dimension, comparing model/reasoning configurations.
 - Strictly regrade SWE-bench-Live status maps, counting missing/skipped expected tests as failures.
 
 The Lance pilot uses [PR #8873](https://github.com/lance-format/lance/pull/8873).
@@ -34,12 +36,16 @@ Use Python 3.12 or later, Git, and Docker on Linux. From the repository root:
 
 ```sh
 python3 -m venv .venv
+.venv/bin/python -m pip install 'matplotlib>=3.10,<4'
 .venv/bin/python -m metabench --help
 .venv/bin/python -m unittest discover -s tests -v
 ```
 
-No dependency installation is needed for the core commands. The existing upstream
-`pip install -e .` workflow also installs the `metabench` entry point. For live model
+The direct Matplotlib installation above is the lightweight reporting dependency declared
+in `pyproject.toml`'s `reports` extra. The existing upstream
+`.venv/bin/python -m pip install -e '.[reports]'` workflow also installs the `metabench`
+entry point and upstream dependencies. Curation and validation can run without Matplotlib;
+`run` checks reporting dependencies before invoking a model. For live model
 access, initialize the `launch` submodule and install its dependencies using the
 upstream [development instructions](Development.md), in the project environment.
 
@@ -155,6 +161,10 @@ does not certify arbitrary third-party images as free of historical code or secr
   .metabench/run-001/results.jsonl --out .metabench/report.md
 ```
 
+`run` automatically writes `report.md` and `report.charts/` in its output directory.
+To compare configurations, pass their JSONL files together to `report`; every figure
+uses the same model/reasoning series styles. No extra plotting switch is needed.
+
 Validation requires repeatable target failures on the base, passing reference checks,
 and usable environments. Changed task content or environment configuration requires new
 validation. A suite has a deterministic content hash; modifying its contents invalidates it.
@@ -239,6 +249,47 @@ and submissions score zero. Infrastructure/evaluator failures remain visible and
 the corresponding aggregate incomplete. Runs from different suites cannot be combined.
 The report does not select the highest-scoring historical checkpoint, pool different
 configuration hashes, or assert statistically significant model rankings.
+
+### Default figures: one dimension per chart
+
+Both `run` and `report` generate a **separate figure for each recorded score dimension**.
+The x-axis is the submission round; the y-axis is score (0–100). Each figure contains
+all model/reasoning configurations, with consistent colors, line styles and markers.
+Close scores get a clearly labeled zoom inset; coincident points are not jittered.
+Total-score and token tables remain in Markdown; a total-score plot does not replace
+the individual dimension plots.
+
+For `--out comparison.md`, the report links to:
+
+- `comparison.charts/01-<dimension>.png` and `.svg`, one pair per dimension;
+- `comparison.charts/chart-data.json`, containing plotted values, task coverage,
+  configuration IDs and aggregation rules.
+
+Dimensions are discovered from `scores` and `score_dimensions` in the result rows;
+they are not hardcoded to the pilot's three dimensions. `score_dimensions` records
+task applicability even when generation or evaluation fails. Imported evaluators may
+provide additional names such as `functional` or `future_evolution` in `scores`.
+The report uses those scores as provided and does not invent or recalculate dimensions.
+
+Missing rounds, unreported scores, agent/evaluator errors and ineligible results are
+**gaps**, not zeroes or carried-forward values. Missing checkpoints for known task/repeat
+trajectories make the affected aggregate incomplete. A dimension never declared or
+observed for a task is not applicable to that task. Duplicate checkpoints and mixed
+suites are rejected. Separate configuration hashes remain separate curves, including
+when model and reasoning labels match.
+
+An evaluator can deliberately omit a dimension by writing a null score and
+`dimension_statuses: {"performance": "excluded"}`. The existing pilot's
+`performance_status: "excluded_incorrect_solution"` is also recognized. A task with
+an excluded repeat is omitted as a whole, so its successful repeats cannot selectively
+improve the mean. Other missing results still leave a gap. Figures list scored/applicable
+task counts for every round; changing task coverage can change an average without
+changing a solution's performance. Exclusions never alter the recorded total score.
+
+The low-level Python `report(rows)` function still returns tables as text. Use
+`write_report(rows, path)` for the complete default report with figures, or the CLI.
+Regeneration retires only images listed in the previous generated chart manifest;
+other files in the chart directory are preserved.
 
 ## Reuse upstream evaluation results
 

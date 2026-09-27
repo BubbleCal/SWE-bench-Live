@@ -33,7 +33,7 @@ def main():
     run.add_argument("--reasoning", required=True)
     run.add_argument("--repeats", type=int, default=1)
     run.add_argument("--trusted-local", action="store_true")
-    report = sub.add_parser("report", help="render score/step tables")
+    report = sub.add_parser("report", help="render tables and one score-vs-round figure per dimension")
     report.add_argument("results", nargs="+", type=Path)
     report.add_argument("--out", type=Path, required=True)
     live = sub.add_parser("grade-live", help="strictly grade a SWE-bench-Live status map")
@@ -66,10 +66,9 @@ def main():
                        repeats=args.repeats, trusted_local=args.trusted_local)
             return 1 if any(r.get("score") is None or r["status"] == "agent_error" for r in rows) else 0
         elif args.operation == "report":
-            from .report import report
+            from .report import write_report
             rows = [json.loads(line) for path in args.results for line in path.read_text().splitlines() if line.strip()]
-            args.out.parent.mkdir(parents=True, exist_ok=True)
-            args.out.write_text(report(rows))
+            write_report(rows, args.out)
         elif args.operation == "grade-live":
             from .evaluate import grade_live_status
             write_json(args.out, grade_live_status(read_json(args.task), read_json(args.status)))
