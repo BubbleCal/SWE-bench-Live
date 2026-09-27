@@ -77,6 +77,7 @@ class ChartsTest(unittest.TestCase):
 
     def test_duplicate_mixed_suite_and_invalid_scores_are_rejected(self):
         for rows in ([row(), row()], [row(), row(suite_id="different")],
+                     [row(protocol_id="native-cli-v1"), row(task="b")],
                      [row(scores={"correctness": float("nan")})],
                      [row(scores={"correctness": -1})], [row(scores={"correctness": True})]):
             with self.assertRaises(ValueError):

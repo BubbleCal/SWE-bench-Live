@@ -22,58 +22,65 @@ def summarize(task, results):
 
 
 def evaluate(repo, task, patch, environment, *, trusted_local=False):
+    with Workspace(repo, task, environment, trusted_local=trusted_local) as workspace:
+        return evaluate_workspace(task, patch, environment, workspace)
+
+
+def evaluate_workspace(task, patch, environment, workspace, *, patches_applied=False):
+    """Grade in a supplied workspace, including persistent VM workspaces."""
     validate_task(task)
     results = {}
-    with Workspace(repo, task, environment, trusted_local=trusted_local) as workspace:
-        identity = workspace.identity
-        try:
+    identity = workspace.identity
+    try:
+        if not patches_applied:
             workspace.apply(patch)
             workspace.apply(task.get("test_patch", ""))
-        except RuntimeErrorWithLog as error:
-            # A candidate which conflicts with the fixed tests is a reviewable failure,
-            # not grounds for silently adapting the tests to that candidate.
-            for check in task["checks"]:
-                results[check["id"]] = {"passed": False, "score": 0.0, "status": "patch_failed", "output": str(error)}
-            return {**summarize(task, results), "environment": identity}
-        for command in environment.get("setup", []):
-            setup = workspace.command(command, environment.get("setup_timeout", 1800))
-            if setup["returncode"]:
-                for check in task["checks"]:
-                    results[check["id"]] = {"passed": False, "score": 0.0, "status": "build_failed", **setup}
-                return {**summarize(task, results), "environment": identity}
+    except RuntimeErrorWithLog as error:
+        # A candidate which conflicts with the fixed tests is a reviewable failure,
+        # not grounds for silently adapting the tests to that candidate.
         for check in task["checks"]:
-            samples = []
-            executions = []
-            performance = check["dimension"] == "performance"
-            count = check.get("repeats", 5) if performance else 1
-            if not isinstance(count, int) or count < 1:
-                raise ValueError("check repeats must be positive")
-            for _ in range(count):
-                execution = workspace.command(check["command"], check.get("timeout", 300))
-                executions.append(execution)
-                if execution["returncode"] or execution["timed_out"]:
-                    break
-                if performance:
-                    try:
-                        value = float(execution["output"].strip())
-                        if not math.isfinite(value) or value <= 0:
-                            break
-                        samples.append(value)
-                    except ValueError:
-                        break
-            if performance:
-                valid = len(samples) == count
-                value = statistics.median(samples) if valid else None
-                score = 100 * max(0, min(1, (value - check["bad"]) / (check["good"] - check["bad"]))) if valid else 0.0
-                passed = valid and (value <= check["good"] if check["direction"] == "lower" else value >= check["good"])
-                results[check["id"]] = {"passed": passed, "score": score, "status": "measured" if valid else "measurement_failed", "samples": samples, "median": value, "executions": executions}
-            else:
-                execution = executions[0]
-                passed = execution["returncode"] == 0 and not execution["timed_out"] and bool(re.search(check["success_pattern"], execution["output"], re.MULTILINE))
-                expected_failure = bool(check.get("failure_pattern")) and bool(re.search(check["failure_pattern"], execution["output"], re.MULTILINE)) and not execution["timed_out"]
-                status = "passed" if passed else ("test_failed" if expected_failure else "execution_failed")
-                results[check["id"]] = {"passed": passed, "score": 100.0 if passed else 0.0, "status": status, "executions": executions}
+            results[check["id"]] = {"passed": False, "score": 0.0, "status": "patch_failed", "output": str(error)}
         return {**summarize(task, results), "environment": identity}
+    for command in environment.get("setup", []):
+        setup = workspace.command(command, environment.get("setup_timeout", 1800))
+        if setup["returncode"]:
+            for check in task["checks"]:
+                results[check["id"]] = {"passed": False, "score": 0.0, "status": "build_failed", **setup}
+            return {**summarize(task, results), "environment": identity}
+    for check in task["checks"]:
+        samples = []
+        executions = []
+        performance = check["dimension"] == "performance"
+        count = check.get("repeats", 5) if performance else 1
+        if not isinstance(count, int) or count < 1:
+            raise ValueError("check repeats must be positive")
+        for _ in range(count):
+            execution = workspace.command(check["command"], check.get("timeout", 300))
+            executions.append(execution)
+            if execution["returncode"] or execution["timed_out"]:
+                break
+            if performance:
+                try:
+                    value = float(execution["output"].strip())
+                    if not math.isfinite(value) or value <= 0:
+                        break
+                    samples.append(value)
+                except ValueError:
+                    break
+        if performance:
+            valid = len(samples) == count
+            value = statistics.median(samples) if valid else None
+            score = 100 * max(0, min(1, (value - check["bad"]) / (check["good"] - check["bad"]))) if valid else 0.0
+            passed = valid and (value <= check["good"] if check["direction"] == "lower" else value >= check["good"])
+            results[check["id"]] = {"passed": passed, "score": score, "status": "measured" if valid else "measurement_failed", "samples": samples, "median": value, "executions": executions}
+        else:
+            execution = executions[0]
+            passed = execution["returncode"] == 0 and not execution["timed_out"] and bool(re.search(check["success_pattern"], execution["output"], re.MULTILINE))
+            expected_failure = bool(check.get("failure_pattern")) and bool(re.search(check["failure_pattern"], execution["output"], re.MULTILINE)) and not execution["timed_out"]
+            status = "passed" if passed else ("test_failed" if expected_failure else "execution_failed")
+            results[check["id"]] = {"passed": passed, "score": 100.0 if passed else 0.0, "status": status, "executions": executions}
+    return {**summarize(task, results), "environment": identity}
+
 
 
 def validate(repo, task, environment, out, *, trusted_local=False, repeats=3):

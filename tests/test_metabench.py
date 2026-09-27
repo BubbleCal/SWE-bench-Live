@@ -8,10 +8,10 @@ from unittest.mock import patch
 from pathlib import Path
 
 from metabench.evaluate import evaluate, grade_live_status, validate
-from metabench.agent import CommandModel
+from metabench.legacy.agent import CommandModel
 from metabench.mine import mine
 from metabench.report import report
-from metabench.run import run
+from metabench.legacy.run import run
 from metabench.runtime import Workspace, git
 from metabench.schema import digest, freeze, load_suite, public_task, write_json
 
@@ -217,7 +217,7 @@ print(json.dumps({"action": action, "usage": {"input_tokens": 10, "cached_input_
         inputs = {"suite": freeze([task]), "environment": {}, "adapter": [sys.executable, str(adapter)],
                   "budget": {"max_steps": 1, "max_calls_per_step": 1, "seconds_per_step": 20,
                              "tool_timeout": 5, "max_tool_output": 1000}}
-        argv = [sys.executable, "-m", "metabench", "run", "--repo", str(self.repo), "--model", "scripted-control",
+        argv = [sys.executable, "-m", "metabench", "legacy-run", "--repo", str(self.repo), "--model", "scripted-control",
                 "--reasoning", "none", "--trusted-local", "--out", str(self.root / "cli-run")]
         for name, value in inputs.items():
             path = self.root / (name + ".json")

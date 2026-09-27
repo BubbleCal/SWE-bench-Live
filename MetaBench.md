@@ -2,17 +2,19 @@
 
 This fork adds a repository-specific evaluation workflow to SWE-bench-Live. It preserves
 the upstream curation, RepoLaunch environment construction, and evaluation commands.
-The curation and evaluation core has no third-party runtime dependency. Reports use
-the `reports` extra (Matplotlib); the optional model adapter uses RepoLaunch's existing
-LiteLLM dependency.
+The native runner, VM queue, evaluator and interactive HTML report use the Python
+standard library. PNG/SVG exports use the optional `reports` extra (Matplotlib).
+The one-shot curation adapter can use RepoLaunch's existing LiteLLM dependency.
 
 ## Scope of this version
 
 - Mine a local Git revision range through a JSON curation-agent adapter.
 - Validate each task against an unchanged base and a reference solution, repeatedly.
 - Freeze task statements, patches, checks, dimension weights, and environment identity.
-- Run a model-driven shell agent for a fixed number of submission rounds, preserving
-  repository state and conversation history between rounds.
+- Run native Codex or Claude Code CLI sessions. A trial is one model / effort / issue / repeat.
+- Give every trial a private Git worktree and session; run trials concurrently.
+- Queue public tests and hidden verification on a configurable pool of existing VMs,
+  with one execution lock per physical machine and persistent per-trial build caches.
 - Evaluate immutable submission patches separately, after the complete trajectory.
 - Record `(model, reasoning, step, score)` with configuration, per-dimension evidence,
   cumulative model calls, reported token usage, cost, elapsed time, and patch identity.
@@ -27,12 +29,14 @@ assertion. It is a reviewed historical pilot, not a representative Lance benchma
 
 Future-requirement replay, subjective code review scores, automatic task-family sampling,
 confidence intervals, model rankings, and token/cost enforcement are not implemented yet.
-No placeholder score is assigned to an unsupported dimension. The current runner enforces
-model-call and wall-clock budgets; token usage and cost are observations when available.
+No placeholder score is assigned to an unsupported dimension. The native runner limits user-level conversation rounds, with an optional round
+timeout. CLI tool iteration and context management remain native. Queue wait and VM
+execution times are recorded separately; token counters remain observations.
 
 ## Setup
 
-Use Python 3.12 or later, Git, and Docker on Linux. From the repository root:
+Use Python 3.12+, Git and SSH on the controller (macOS/Linux). Test VMs need Linux,
+Python 3.12+, Git, Docker and the pinned images. From the repository root:
 
 ```sh
 python3 -m venv .venv
@@ -45,9 +49,9 @@ The direct Matplotlib installation above is the lightweight reporting dependency
 in `pyproject.toml`'s `reports` extra. The existing upstream
 `.venv/bin/python -m pip install -e '.[reports]'` workflow also installs the `metabench`
 entry point and upstream dependencies. Curation and validation can run without Matplotlib;
-`run` checks reporting dependencies before invoking a model. For live model
-access, initialize the `launch` submodule and install its dependencies using the
-upstream [development instructions](Development.md), in the project environment.
+native `run` writes standalone HTML without needing Matplotlib. Install and authenticate
+the local Codex / Claude Code CLIs for live trials. The `launch` submodule and its
+provider dependencies are only needed by the optional curation adapter.
 
 ## Prepare a task
 
@@ -153,9 +157,8 @@ does not certify arbitrary third-party images as free of historical code or secr
 
 .venv/bin/python -m metabench run \
   --suite .metabench/suite.json --repo /path/to/lance \
-  --environment environment.json --adapter model-adapter.json \
-  --model PROVIDER/MODEL --reasoning YOUR_SETTING \
-  --budget examples/metabench/budget.json --repeats 3 --out .metabench/run-001
+  --environment environment.json --matrix my-native-matrix.json \
+  --vm-count 2 --parallel-agents 30 --out .metabench/run-001
 
 .venv/bin/python -m metabench report \
   .metabench/run-001/results.jsonl --out .metabench/report.html
@@ -173,8 +176,8 @@ on refresh; it retains the last valid browser snapshot if a file is partially wr
 or unavailable. Selections persist locally. Downloading a snapshot produces an
 offline HTML file; it does not continue polling the local server.
 
-`run` automatically writes `report.html`, `report.md` and `report.charts/` in its
-output directory. Explicit Markdown reports retain PNG/SVG exports and link to the
+Native `run` updates `results.jsonl`, `status.json` and `report.html` as checkpoints
+and grades arrive. Explicit Markdown reports retain PNG/SVG exports and link to the
 interactive HTML. To compare configurations, pass their JSONL files together;
 configuration hashes and frozen suite checks still apply. The live viewer binds
 only to loopback and exposes no file browser. Optional `--metadata status.json`
@@ -193,85 +196,95 @@ It executes repository commands on the host and **is not a security sandbox**. S
 are always marked `score_eligible: false`; use this only with trusted code, never as an
 isolated adversarial model benchmark. Docker is required for ordinary model runs.
 
-## Model adapter protocol
+## Native agents and VM scheduling
 
-The trusted adapter reads one JSON request per invocation:
+Copy [native-matrix.json](examples/metabench/native-matrix.json), then edit the VM
+inventory and agent configurations. `--vm-count N` selects the first N configured VMs;
+it does not provision cloud instances. Every selected VM needs SSH, Python 3.12+,
+Git, Docker, and the pinned environment images. Missing images fail preflight before
+model calls. CLI versions, invoked-file hashes and execution-source hashes are recorded.
 
-```json
-{"model":"provider/model","reasoning":"high","messages":[{"role":"user","content":"..."}]}
+The six example model/effort configurations over five issues create **30 independent
+trials**, not six sequential issue runners. Concurrency defaults to every trial; use
+`--parallel-agents` to impose a provider/resource limit. Completed agent trajectories
+release their agent slots immediately while grading continues in the separate VM queue.
+Each trial has stable VM affinity so its compiler cache stays warm. Different VMs can
+execute tests concurrently; tests assigned to the same VM are FIFO and exclusive.
+
+Local layout:
+
+```text
+run/
+  run.json, results.jsonl, status.json, report.html
+  queue.sqlite
+  trials/<model>-<effort>-<issue>-<id>/
+    checkout/objects.git           # private, depth-one base objects
+    checkout/worktree/             # exact requested base commit
+    turn-1/events.jsonl, result.json, invocation.json
+    checkpoint-1.json, step-1.patch, score-1.json
 ```
 
-It returns one action and optional usage:
+The controller calls `codex exec` or `claude -p` once per conversation round. The CLI
+reads/edits code and performs its own tool calls; no command-action JSON loop runs in
+metabench. Later rounds resume the exact saved session ID, never `--last` or `--continue`.
+A fixed self-review prompt starts each additional round without revealing hidden scores.
+See the official [Codex command reference](https://learn.chatgpt.com/docs/developer-commands#codex-exec)
+and [Claude Code programmatic execution](https://code.claude.com/docs/en/headless).
 
-```json
-{"action":{"command":"git diff"},"usage":{"input_tokens":100,"output_tokens":20,"cost_usd":0.001}}
+The configured `bench.run_tests` MCP tool snapshots current changes and queues a public
+test on the VM. Each trial has a capability limited to its own public test results.
+Hidden verification starts after that trial's complete trajectory; its results have no
+agent-facing endpoint. Public and verification lanes have separate Git databases and
+container filesystems, preventing hidden test objects from entering a reused public cache.
+
+VM layout and locking:
+
+```text
+/tmp/metabench-vm.lock              # global across run roots/controllers
+<vm-root>/trials/<trial-id>/
+  public.seed/, public/            # public-test worktree
+  verify.seed/, verify/            # held-out verifier worktree
+<vm-root>/queue/<job-id>/           # request, worker log, durable result
 ```
 
-or `{"action":{"submit":true}}`. Unknown usage remains `null`, not zero. The provided
-`examples/metabench/repolaunch_model.py` adapter uses the LiteLLM completion interface
-already used by RepoLaunch; API credentials stay in the trusted adapter process.
-Providers that need a different endpoint can supply another JSON adapter. Adapter
-configuration, model version, and reasoning setting are part of the run identity.
+VM workers detach from SSH before taking the kernel lock. That lock covers source
+source synchronization, setup, compilation, tests and process cleanup. Disconnecting a local
+controller does not release the remote lock. A new worker fences surviving owned
+containers before running tests. Containers are stopped between jobs but retained;
+compiler output such as `/build-cache/target` survives while source is updated to the
+base plus the immutable candidate patch. An alternate Git index applies only content
+changes, preserving timestamps on unchanged sources and avoiding needless rebuilds. There is no shared mutable cache between trials
+or between public and private lanes. VM filesystem ownership is restored before releasing
+the lock. The container has no network, no Docker socket, and only its own source and
+read-only Git metadata bind mounts.
 
-`examples/metabench/codex_model.py` is an alternative that uses saved local Codex CLI
-authentication. It disables native CLI tools, plugins, memories and inherited app routing;
-the CLI returns one structured decision for the metabench container to execute. Unexpected
-native tool events invalidate the invocation. Set `METABENCH_PROVIDER_LOG_DIR` to preserve
-the raw provider event streams. This is a fixed Codex CLI inference wrapper, not a claim
-of equivalence to direct API requests or the full Codex coding-agent product.
+`--resume` accepts the exact same frozen configuration, reconciles existing remote jobs,
+and skips completed checkpoints. Running jobs never expire based only on elapsed time:
+a missing remote receipt requires inspection rather than potentially overlapping a live
+test. An orphaned CLI turn directory is also retained for inspection rather than silently
+billing a duplicate turn. Keep VM directories and stopped containers to reuse caches;
+cloud stop/start preserves them when backed by persistent disks.
 
-`examples/metabench/claude_model.py` uses saved local Claude Code subscription
-authentication with the same decision prompt and schema. Supply the full model ID and
-an explicit effort; `METABENCH_CLAUDE` can pin a particular installed CLI executable.
-It disables user customizations and native tools except the `StructuredOutput` formatter,
-rejects model fallback and subagent activity, and requires one completed provider request
-per decision. Claude Code may count the local formatting turn in `num_turns`; the adapter
-checks the provider iteration ledger and message identity instead. The CLI remains on
-the host, while returned commands run in the benchmark container.
+Codex pre-approves only `bench.run_tests` through its per-tool MCP setting. Claude uses
+restricted mode with explicit native coding tools and the same scoped MCP tool; safe mode
+would disable even the explicitly configured server. Both retain their own agent loops.
 
-If the model ends with native final text, the CLI may hit its turn cap while trying to
-add a formatting pass. A completed `end_turn` with one provider request and no tool call
-is treated as a submission of the current workspace. Valid JSON text retains its explicit
-action; commands are never inferred from prose. This avoids an extra model call just for
-formatting. Other CLI/provider failures still abort the invocation.
+Native CLIs run on the controller host with saved local authentication and their native
+permission mechanisms. Git worktrees isolate repository state, **not hostile processes
+on the same host**. Use trusted repositories/agents; VM test isolation does not turn a
+local native CLI into an adversarial sandbox. Pin an executable path when CLI auto-updates
+would otherwise change a run. Subagents are disabled so the selected model handles the
+trial; ordinary native file and shell tools remain available.
 
-For example, an adapter JSON file can contain
-`["/absolute/path/to/.venv/bin/python", "/absolute/path/to/examples/metabench/claude_model.py"]`.
-Run a small authenticated preflight with the requested model/effort before starting a
-campaign. Authentication errors (including an account hold) are infrastructure failures,
-not model scores; do not silently change models or efforts to recover.
+Token accounting distinguishes provider scopes: Codex's resumed session counters are
+differenced against the previous checkpoint; Claude's per-invocation `result.usage` is
+used instead of its cumulative `modelUsage`/cost fields or incomplete streaming counters.
+Cache reads/writes are included once in input. Missing interrupted-request usage remains
+unknown. CLI price estimates are not subscription invoices.
 
-Claude usage needs an explicit conversion: its raw `input_tokens` excludes cache reads
-and writes. The adapter's inclusive input count is `input_tokens + cache_read_input_tokens
-+ cache_creation_input_tokens`, following the [provider usage definition](https://platform.claude.com/docs/en/build-with-claude/prompt-caching).
-Thinking tokens are recorded only when the provider reports them. The CLI's dollar value
-is retained as `estimated_api_cost_usd` metadata; it is not treated as a subscription bill.
-The [CLI reference](https://code.claude.com/docs/en/cli-reference) documents print mode,
-effort, safe mode, tool restrictions and structured output.
-
-The runner stores per-call usage, each round's incremental `step_usage`, and cumulative
-`usage`. Counters include input, cached input, cache-write input, output and reasoning
-output tokens where provided. Cached input is a subset of input, and reasoning output is
-a subset of output: `total_tokens = input_tokens + output_tokens`, without adding either
-subset again. Unknown counters, including unobserved timed-out requests and unavailable
-ChatGPT-account billing, remain null rather than being estimated as zero. CLI usage
-semantics follow the [official JSON event format](https://learn.chatgpt.com/docs/non-interactive-mode).
-
-An environment configuration may contain `by_task`, mapping each instance ID to its own
-validated environment. This permits separate immutable images containing each task's
-original-base build cache. Each task still validates against the exact selected environment
-hash; caches from reference solutions or other future repo revisions must not enter images.
-
-One `step` is one submission round. `agent_steps` counts cumulative model calls, including
-submission calls. Each round has independent call/time limits. The model gets its prior
-conversation, current workspace, and a fixed request to review the original requirements.
-It can run public tests. Hidden scores, failures, test patches, and reference code are
-evaluated only after generation and are never used as continuation feedback. This version
-does not simulate reviewer-specific advice or choose a best patch using hidden scores.
-
-The command adapter is trusted infrastructure, not an untrusted subprocess sandbox. It
-must not retrieve answers, access private evaluator files, or add undocumented tools.
-Candidate shell commands execute only in the task container in normal Docker mode.
+The retired protocol is retained under `metabench.legacy` and `legacy-run` only for
+reproducing historical results. New runs emit `protocol_id: native-cli-v1`; reports reject
+mixing them with legacy command-loop measurements.
 
 ## Scoring and reporting
 
@@ -290,20 +303,22 @@ Reference code is not assumed to be the only correct solution. Tests should acce
 equivalent implementations. Historical public tasks may have appeared in pretraining;
 the tool makes no contamination-free claim.
 
-Report means first average repeats within each task, then average tasks. Failed builds
-and submissions score zero. Infrastructure/evaluator failures remain visible and make
+Report means first average repeats within each task, then average tasks. Established
+check failures score zero. Unclassified build, infrastructure and evaluator failures remain visible and make
 the corresponding aggregate incomplete. Runs from different suites cannot be combined.
 The report does not select the highest-scoring historical checkpoint, pool different
 configuration hashes, or assert statistically significant model rankings.
 
-### Default figures: one dimension per chart
+### Interactive reports: one dimension per chart
 
-Both `run` and `report` generate a **separate figure for each recorded score dimension**.
+Native `run` generates interactive HTML. Each recorded score dimension has its own chart.
+`report --out comparison.html` produces a standalone snapshot; explicit Markdown output
+also exports separate PNG/SVG figures.
 The x-axis is the submission round; the y-axis is score (0–100). Each figure contains
 all model/reasoning configurations, with consistent colors, line styles and markers.
-Close scores get a clearly labeled zoom inset; coincident points are not jittered.
-Total-score and token tables remain in Markdown; a total-score plot does not replace
-the individual dimension plots.
+HTML supports model/effort filters, individual tasks, round details and token totals.
+The live `dashboard` command refreshes producer updates while retaining selections.
+Static image exports include a zoom inset for close scores; points are never jittered.
 
 For `--out comparison.md`, the report links to:
 

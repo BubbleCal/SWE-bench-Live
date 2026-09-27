@@ -25,7 +25,7 @@ def main():
     frozen = sub.add_parser("freeze", help="freeze validated tasks with a content hash")
     frozen.add_argument("tasks", nargs="+", type=Path)
     frozen.add_argument("--out", type=Path, required=True)
-    run = sub.add_parser("run", help="run iterative agents and score each checkpoint")
+    run = sub.add_parser("legacy-run", help="reproduce the retired command-loop protocol")
     for flag in ("suite", "environment", "adapter", "budget", "out"):
         run.add_argument("--" + flag, type=Path, required=True)
     run.add_argument("--repo", required=True)
@@ -33,6 +33,13 @@ def main():
     run.add_argument("--reasoning", required=True)
     run.add_argument("--repeats", type=int, default=1)
     run.add_argument("--trusted-local", action="store_true")
+    native = sub.add_parser("run", help="run parallel native CLI model/effort/issue trials")
+    for flag in ("suite", "environment", "matrix", "out"):
+        native.add_argument("--" + flag, type=Path, required=True)
+    native.add_argument("--repo", required=True)
+    native.add_argument("--vm-count", type=int)
+    native.add_argument("--parallel-agents", type=int)
+    native.add_argument("--resume", action="store_true")
     report = sub.add_parser("report", help="render interactive HTML, or Markdown with image exports")
     report.add_argument("results", nargs="+", type=Path)
     report.add_argument("--out", type=Path, required=True)
@@ -63,12 +70,17 @@ def main():
             return 0 if result["validation"]["passed"] else 1
         elif args.operation == "freeze":
             write_json(args.out, freeze([read_json(path) for path in args.tasks]))
-        elif args.operation == "run":
-            from .run import run
+        elif args.operation == "legacy-run":
+            from .legacy.run import run
             rows = run(load_suite(args.suite), args.repo, read_json(args.environment), read_json(args.adapter),
                        args.model, args.reasoning, read_json(args.budget), args.out,
                        repeats=args.repeats, trusted_local=args.trusted_local)
             return 1 if any(r.get("score") is None or r["status"] == "agent_error" for r in rows) else 0
+        elif args.operation == "run":
+            from .native_run import run_matrix
+            rows = run_matrix(load_suite(args.suite), args.repo, read_json(args.environment), read_json(args.matrix),
+                              args.out, vm_count=args.vm_count, parallel=args.parallel_agents, resume=args.resume)
+            return 0 if read_json(args.out / "run.json").get("status") == "Complete" else 1
         elif args.operation == "report":
             from .report import write_report
             rows = [json.loads(line) for path in args.results for line in path.read_text().splitlines() if line.strip()]

@@ -13,6 +13,8 @@ def report(rows):
     suites = {r["suite_id"] for r in rows}
     if len(suites) != 1:
         raise ValueError("compare only runs from the same frozen suite")
+    if len({r.get("protocol_id", "legacy-command-v1") for r in rows}) != 1:
+        raise ValueError("compare only runs from the same agent protocol")
     grouped = collections.defaultdict(list)
     for row in rows:
         grouped[(row["model"], str(row["reasoning"]), row.get("step"), row["config_id"])].append(row)

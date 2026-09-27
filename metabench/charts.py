@@ -45,6 +45,8 @@ def chart_data(rows):
     suites = {r["suite_id"] for r in rows}
     if len(suites) != 1:
         raise ValueError("compare only runs from the same frozen suite")
+    if len({r.get("protocol_id", "legacy-command-v1") for r in rows}) != 1:
+        raise ValueError("compare only runs from the same agent protocol")
     dimensions = set()
     applicable = collections.defaultdict(set)
     groups = collections.defaultdict(dict)

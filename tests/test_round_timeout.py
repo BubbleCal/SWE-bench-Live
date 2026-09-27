@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from metabench.agent import CommandModel, trajectory
+from metabench.legacy.agent import CommandModel, trajectory
 
 
 class Workspace:
@@ -22,7 +22,7 @@ class RoundTimeoutTest(unittest.TestCase):
         budget = {"max_steps": 2, "max_calls_per_step": 1, "seconds_per_step": 10,
                   "tool_timeout": 1, "max_tool_output": 100}
         task = {"instance_id": "timeout-control", "problem_statement": "Finish the task."}
-        with tempfile.TemporaryDirectory() as temp, patch("metabench.agent.execute", side_effect=[timeout, submitted]):
+        with tempfile.TemporaryDirectory() as temp, patch("metabench.legacy.agent.execute", side_effect=[timeout, submitted]):
             rows = trajectory(Workspace(), task, CommandModel(["unused"], "test", "high"), budget, Path(temp))
         self.assertEqual(len(rows), 2)
         self.assertEqual(rows[0]["status"], "round_budget_exhausted")

@@ -3,9 +3,9 @@
 import json
 import time
 
-from .process import execute
-from .schema import public_task, write_json
-from . import usage as counters
+from ..process import execute
+from ..schema import public_task, write_json
+from .. import usage as counters
 
 SYSTEM = """You are solving a software engineering task in a repository.
 Return exactly one JSON action: {\"command\": \"shell command\"} to inspect, edit, or test,
