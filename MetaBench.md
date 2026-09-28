@@ -348,6 +348,10 @@ The performance chart defaults to an automatically zoomed y-axis across the visi
 configurations and rounds, with its displayed range explicitly labelled. Uncheck
 **Zoom performance axis** to restore the full 0–100 scale. Task/model filters update
 the range; scores and aggregation stay unchanged. Hover and table values use two decimals.
+Each curve also has a model/effort label at its latest measured endpoint. Labels are
+spaced to avoid collisions, with dotted connectors to the unchanged data positions;
+their score and round remain explicit. Hover or focus a label, or hover a table row,
+to highlight that model across all charts and dim the others.
 The live `dashboard` command refreshes producer updates while retaining selections.
 Static image exports include a zoom inset for close scores; points are never jittered.
 

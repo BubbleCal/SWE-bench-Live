@@ -9,6 +9,7 @@
 @media(prefers-color-scheme:dark){:root{--bg:#14191f;--fg:#e7edf5;--panel:#1c242d;--muted:#a5b3c4;--line:#364351;--accent:#93b4ff;--warn:#ffbe70;--c0:#79a6ff;--c1:#67d5ac;--c2:#ffba70;--c3:#c299ff;--c4:#ff88b7;--c5:#6dd6e8;--c6:#d0dc84}}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}main{max-width:1500px;margin:auto;padding:30px 28px 50px}h1{font-size:28px;font-weight:650;margin:0 0 6px}h2{font-size:18px;font-weight:600;margin:0 0 10px}p{margin:4px 0}.muted{color:var(--muted)}.header{display:flex;justify-content:space-between;gap:20px;align-items:start;flex-wrap:wrap}.status{font-size:13px;text-align:right}.status strong{display:block;font-size:15px;color:var(--accent)}.warning{color:var(--warn)}.toolbar{display:flex;gap:18px;flex-wrap:wrap;align-items:end;margin:20px 0}button,select,input{font:inherit}button,select{background:var(--panel);color:var(--fg);border:1px solid var(--line);border-radius:7px;padding:7px 11px}button{cursor:pointer}button:hover{border-color:var(--accent)}button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:3px}label{cursor:pointer}.switch{display:flex;gap:7px;align-items:center}input[type=checkbox]{accent-color:var(--accent);width:17px;height:17px}fieldset{border:0;padding:0;margin:0}legend{font-size:13px;color:var(--muted);margin-bottom:6px}.models{display:flex;gap:30px;flex-wrap:wrap;padding:16px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}.choices{display:flex;gap:14px;flex-wrap:wrap}.choice{display:flex;align-items:center;gap:6px;min-height:28px}.swatch{display:inline-block;width:21px;border-top:3px solid var(--series)}.swatch[data-effort=xhigh]{border-top-style:dashed}.swatch[data-effort=max]{border-top-style:dotted}.progress{margin:16px 0 6px;display:flex;gap:24px;flex-wrap:wrap;font-variant-numeric:tabular-nums}.progress b{font-weight:600}.note{font-size:13px;color:var(--muted);margin:8px 0 18px;max-width:1150px}.charts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}.chart{min-width:0;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px 14px 14px;position:relative}.chart h2{padding-left:4px}.chart svg{display:block;width:100%;height:285px;overflow:visible}.chart text{fill:var(--muted);font-family:inherit;font-size:12px}.chart .axis-title{fill:var(--fg)}.chart .grid{stroke:var(--line);stroke-width:1}.chart .axis{stroke:var(--muted);stroke-width:1}.chart .line{fill:none;stroke-width:2.4;stroke-linejoin:round}.chart .mark{stroke-width:2;fill:var(--panel)}.chart .guide{stroke:var(--muted);stroke-width:1;stroke-dasharray:3 4}.chart .hit{fill:transparent;cursor:crosshair}.chart .empty{font-size:13px}.chart-note{font-size:12px;min-height:36px;color:var(--muted);padding:0 4px}.tooltip{position:fixed;z-index:5;pointer-events:none;background:var(--panel);color:var(--fg);border:1px solid var(--line);box-shadow:0 6px 20px #0002;border-radius:8px;padding:10px 13px;font-size:12px;max-width:calc(100vw - 24px)}.tooltip[hidden]{display:none}.tooltip .tip-row{display:flex;gap:14px;justify-content:space-between;font-variant-numeric:tabular-nums}.tooltip strong{display:block;margin-bottom:4px}.details{margin-top:22px}.round-control{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.round-control input{width:180px}.table-wrap{overflow-x:auto;margin-top:12px}table{width:100%;border-collapse:collapse;font-size:13px;text-align:left}th,td{padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}th{font-weight:550;color:var(--muted);white-space:nowrap}td:not(:first-child){font-variant-numeric:tabular-nums}td small{display:block;color:var(--muted);font-size:11px}.model-cell{min-width:190px}.foot{font-size:12px;color:var(--muted);margin-top:16px}.error{margin-top:8px;font-size:13px;color:var(--warn)}.hidden{display:none!important}
 @media(max-width:1050px){.charts{grid-template-columns:1fr}.chart svg{height:300px}.chart-note{min-height:0}}@media(max-width:520px){main{padding:20px 14px}.status{text-align:left}h1{font-size:24px}.models{gap:16px}.toolbar{gap:12px}.chart{padding:14px 8px}.chart svg{height:265px}.progress{gap:8px 20px;font-size:13px}.table-wrap{margin-right:-4px}}
+.series-layer{pointer-events:none}.chart [data-series],#table-body tr{transition:opacity .12s}.chart .focused .line{stroke-width:4}.chart .focused .mark{stroke-width:3}.chart .endpoint-leader{fill:none;stroke-width:1;stroke-dasharray:2 3;pointer-events:none}.chart .end-label{cursor:pointer}.chart .end-label text{font-size:10.5px}.chart .end-label:focus{outline:none}.chart .end-label:focus .label-name{text-decoration:underline}
 </style>
 </head>
 <body>
@@ -21,7 +22,7 @@
   <p id="note" class="note"></p>
   <section id="charts" class="charts" aria-label="One chart per score dimension"></section>
   <section class="details"><div class="round-control"><h2 style="margin:0">Round <span id="round-value">5</span></h2><input type="range" id="round" min="1" max="5" value="5" aria-label="Inspect round"><span class="muted">Click a chart or move the slider to inspect a checkpoint.</span></div><div class="table-wrap"><table><thead><tr id="table-head"></tr></thead><tbody id="table-body"></tbody></table></div></section>
-  <p class="foot">Scores average repeats within each task, then tasks. Incomplete coverage stays blank; excluded performance cases are not scored as zero. Token totals include cached input and reasoning output once. ≥ means a measured lower bound. Same effort labels across providers do not imply equal reasoning budgets.</p>
+  <p class="foot">End labels are spaced for readability; dotted connectors point to the actual scores. Hover a label or table row to highlight that model across all charts. Scores average repeats within each task, then tasks. Incomplete coverage stays blank; excluded performance cases are not scored as zero. Token totals include cached input and reasoning output once. ≥ means a measured lower bound. Same effort labels across providers do not imply equal reasoning budgets.</p>
 </main>
 <div id="tooltip" class="tooltip" role="tooltip" hidden></div>
 <script id="metabench-data" type="application/json">__METABENCH_DATA__</script>
@@ -42,6 +43,15 @@
   function point(chart,id,step){return chart?.points[id]?.find(p=>p.step===step)||{step,score:null,scored_tasks:0,applicable_tasks:chart?(selectedTask?1:data.tasks.length):0,missing_tasks:[],excluded_tasks:[]};}
   function labelPoint(p){if(p.score!=null)return fmt(p.score);if(!p.applicable_tasks)return 'Not applicable';if(!p.missing_tasks?.length&&p.excluded_tasks?.length===p.applicable_tasks)return 'Excluded';return 'Pending';}
   function coverage(p){return p.scored_tasks+'/'+p.applicable_tasks+' tasks'+(p.excluded_tasks?.length?' · '+p.excluded_tasks.length+' excluded':'');}
+  function shortLabel(s){
+    const model=s.model.replace(/^claude-opus-(\d+)-(\d+)$/,'Opus $1.$2').replace(/^gpt-(\d+)-/,'GPT$1 ').replace(/^claude-/,'');
+    return model+' '+s.reasoning+(data.series.filter(x=>x.model===s.model&&x.reasoning===s.reasoning).length>1?' '+s.config_id.slice(0,4):'');
+  }
+  function highlightSeries(id){
+    for(const node of $('charts').querySelectorAll('[data-series]')){const match=node.dataset.series===id;node.style.opacity=!id||match?'1':'.14';node.classList.toggle('focused',!!id&&match);}
+    for(const layer of $('charts').querySelectorAll('.series-layer')){const match=[...layer.children].find(n=>n.dataset.series===id);if(match)layer.append(match);}
+    for(const row of $('table-body').children)row.style.opacity=!id||row.dataset.series===id?'1':'.4';
+  }
   function scoreAxis(dimension,chart){
     const full={min:0,max:105,ticks:[0,20,40,60,80,100],note:''};
     if(dimension!=='performance'||!zoomPerformance)return full;
@@ -86,9 +96,12 @@
     $('tooltip').hidden=true;const host=$('charts');host.replaceChildren();
     for(const base of data.charts){
       const chart=dimensions().find(c=>c.dimension===base.dimension),panel=text('article','','chart');panel.dataset.dimension=base.dimension;panel.append(text('h2',metricNames[base.dimension]||base.title));
-      const svg=svgEl('svg',{role:'img','aria-label':(metricNames[base.dimension]||base.title)+' by submission round'});panel.append(svg);host.append(panel);
-      const width=Math.max(250,panel.clientWidth-28),height=window.innerWidth<520?265:window.innerWidth<1050?300:285;
-      const left=64,right=width-16,top=12,bottom=height-43,last=Math.max(...data.steps,1);
+      const svg=svgEl('svg',{role:'group','aria-label':(metricNames[base.dimension]||base.title)+' by submission round'});panel.append(svg);host.append(panel);
+      const visible=data.series.filter(s=>selected.has(s.config_id));
+      const width=Math.max(250,panel.clientWidth-28),height=Math.max(window.innerWidth<520?265:window.innerWidth<1050?300:285,visible.length*24+60);
+      const labelWidth=Math.min(145,Math.max(105,width*.32));
+      const left=64,right=width-labelWidth-14,top=12,bottom=height-43,last=Math.max(...data.steps,1);
+      svg.style.height=height+'px';
       svg.setAttribute('viewBox','0 0 '+width+' '+height);
       const axis=scoreAxis(base.dimension,chart);
       svg.setAttribute('data-y-min',axis.min);svg.setAttribute('data-y-max',axis.max);
@@ -97,17 +110,19 @@
       svg.append(svgEl('line',{x1:left,x2:right,y1:bottom,y2:bottom,class:'axis'}));
       for(const n of data.steps)svg.append(svgEl('text',{x:x(n),y:bottom+21,'text-anchor':'middle'},n));
       svg.append(svgEl('text',{x:(left+right)/2,y:height-4,'text-anchor':'middle',class:'axis-title'},'Round'),svgEl('text',{transform:'translate(13 '+((top+bottom)/2)+') rotate(-90)','text-anchor':'middle',class:'axis-title'},'Score'));
-      let valid=0;const incomplete=[];
-      for(const s of data.series.filter(s=>selected.has(s.config_id))){
+      let valid=0;const incomplete=[],ends=[],curves=svgEl('g',{class:'series-layer'});svg.append(curves);
+      for(const s of visible){
         const st=style(s),ps=data.steps.map(step=>point(chart,s.config_id,step));let path='',connected=false;
+        const group=svgEl('g',{'data-series':s.config_id});curves.append(group);
         for(const p of ps){if(p.score==null){connected=false;continue;}valid++;path+=(connected?'L':'M')+x(p.step)+','+y(p.score)+' ';connected=true;}
-        if(path)svg.append(svgEl('path',{d:path,class:'line',stroke:st.color,'stroke-dasharray':st.dash,'data-series':s.config_id}));
+        if(path)group.append(svgEl('path',{d:path,class:'line',stroke:st.color,'stroke-dasharray':st.dash}));
         const markerSize=[6,4.5,3.5][data.series.indexOf(s)%3];
         for(const p of ps.filter(p=>p.score!=null)){
-          const attrs={class:'mark',stroke:st.color,'data-series':s.config_id};
+          const attrs={class:'mark',stroke:st.color};
           const node=s.reasoning==='xhigh'?svgEl('rect',{...attrs,x:x(p.step)-markerSize,y:y(p.score)-markerSize,width:markerSize*2,height:markerSize*2}):s.reasoning==='max'?svgEl('path',{...attrs,d:`M${x(p.step)},${y(p.score)-markerSize}l${markerSize},${markerSize*2}h${-2*markerSize}Z`}):svgEl('circle',{...attrs,cx:x(p.step),cy:y(p.score),r:markerSize});
-          node.append(svgEl('title',{},s.label+' · round '+p.step+': '+fmt(p.score)+' · '+coverage(p)));svg.append(node);
+          node.append(svgEl('title',{},s.label+' · round '+p.step+': '+fmt(p.score)+' · '+coverage(p)));group.append(node);
         }
+        const end=ps.filter(p=>p.score!=null).at(-1);if(end)ends.push({series:s,point:end,target:y(end.score),position:y(end.score)});
         if(ps.some(p=>labelPoint(p)==='Pending'))incomplete.push(s.label);
       }
       if(!valid)svg.append(svgEl('text',{x:(left+right)/2,y:(top+bottom)/2,'text-anchor':'middle',class:'empty'},selected.size?(incomplete.length?'Measurements pending':'No applicable scored results'):'Select a model'));
@@ -121,6 +136,21 @@
         if(pin){round=step;$('round').value=round;save();draw();}
       }
       overlay.addEventListener('pointermove',e=>inspect(e));overlay.addEventListener('click',e=>inspect(e,true));overlay.addEventListener('pointerleave',()=>{$('tooltip').hidden=true;guide.setAttribute('x1',x(round));guide.setAttribute('x2',x(round));});
+      ends.sort((a,b)=>a.target-b.target||data.series.indexOf(a.series)-data.series.indexOf(b.series));
+      const gap=24,minLabel=top+5,maxLabel=bottom-13;
+      for(let i=0;i<ends.length;i++)ends[i].position=Math.max(ends[i].target,i?ends[i-1].position+gap:minLabel);
+      if(ends.length&&ends.at(-1).position>maxLabel){ends.at(-1).position=maxLabel;for(let i=ends.length-2;i>=0;i--)ends[i].position=Math.min(ends[i].position,ends[i+1].position-gap);}
+      for(const end of ends){
+        const s=end.series,p=end.point,st=style(s),labelX=right+13;
+        const label=svgEl('g',{'data-series':s.config_id,class:'end-label',tabindex:0,role:'button','aria-label':'Highlight '+s.label+', round '+p.step+', score '+fmt(p.score)});
+        label.append(svgEl('path',{d:'M'+x(p.step)+','+end.target+' L'+(right+7)+','+end.position+' H'+(labelX-3),stroke:st.color,class:'endpoint-leader'}));
+        const name=svgEl('text',{x:labelX,y:end.position,class:'label-name'},shortLabel(s));name.style.fill=st.color;
+        const value=svgEl('text',{x:labelX,y:end.position+12},fmt(p.score)+' · r'+p.step);
+        label.append(name,value,svgEl('title',{},s.label+' · round '+p.step+': '+fmt(p.score)+' · '+coverage(p)));
+        label.addEventListener('pointerenter',()=>highlightSeries(s.config_id));label.addEventListener('pointerleave',()=>highlightSeries(null));
+        label.addEventListener('focus',()=>highlightSeries(s.config_id));label.addEventListener('blur',()=>highlightSeries(null));
+        label.addEventListener('click',()=>highlightSeries(s.config_id));label.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();highlightSeries(s.config_id);}});svg.append(label);
+      }
       panel.append(text('p',(axis.note?axis.note+' ':'')+(incomplete.length?'Pending or partial: '+incomplete.join(' · '):'All displayed configurations have complete eligible checkpoints.'),'chart-note'));
     }table();
   }
@@ -129,7 +159,8 @@
     for(const c of data.charts)head.append(text('th',metricNames[c.dimension]||c.title));head.append(text('th','Cumulative tokens'));
     $('table-body').replaceChildren();
     for(const s of data.series.filter(s=>selected.has(s.config_id))){
-      const row=document.createElement('tr');row.append(text('td',s.label,'model-cell'));
+      const row=document.createElement('tr');row.dataset.series=s.config_id;row.append(text('td',s.label,'model-cell'));
+      row.addEventListener('pointerenter',()=>highlightSeries(s.config_id));row.addEventListener('pointerleave',()=>highlightSeries(null));
       for(const base of data.charts){const chart=dimensions().find(c=>c.dimension===base.dimension),p=point(chart,s.config_id,round),cell=text('td',labelPoint(p));cell.append(text('small',coverage(p)));row.append(cell);}
       const rs=data.rows.filter(r=>r.config_id===s.config_id&&r.step===round&&(!selectedTask||r.task_id===selectedTask));
       let total=0,unknown=rs.length===0;const tasks=new Set(rs.map(r=>r.task_id));
