@@ -210,6 +210,26 @@ release their agent slots immediately while grading continues in the separate VM
 Each trial has stable VM affinity so its compiler cache stays warm. Different VMs can
 execute tests concurrently; tests assigned to the same VM are FIFO and exclusive.
 
+For an already running campaign, attach additional prepared VMs without restarting
+native sessions:
+
+```bash
+python -m metabench.elastic --run /path/to/run --vms ready-vms.json \
+  --max-vms 3 --target-wait 180
+```
+
+The inventory contains only the additional VMs under `vms`; prepare and verify matching
+machine specifications, container limits and pinned images before attaching them.
+Cloud provisioning remains external to this command. Queue history estimates useful
+capacity from sustained backlog and observed service times. The adapter changes a
+trial's assignment only when none of its jobs is running, routes future inserts in
+the same SQLite transaction, and pins that trial thereafter. Original controllers
+can consume the new workers' receipts without loading new agent-loop code.
+`runtime-topology.json` records assignments, queue pressure, worker identities and the
+adapter hash; the initial run manifest is retained. Compare execution intervals per
+VM after scaling, and disclose changed concurrency when interpreting results. An
+uncertain remote job stays fenced. No worker or VM is automatically shut down.
+
 Local layout:
 
 ```text
