@@ -251,6 +251,9 @@ Before starting any model, the controller creates the private worktrees and stag
 checksum-verified base archives on all assigned VMs. Trials with the same base reuse
 immutable archive bytes, while retaining separate Git object databases. Transfer
 failures therefore stop preflight rather than consuming a model's conversation budget.
+For pre-provisioned archives, the optional matrix `base_archives` maps a full base
+commit to `{ "path": "...", "sha256": "..." }`. The controller checks the digest,
+commit and tree before reuse; each VM verifies its content-addressed copy independently.
 See the official [Codex command reference](https://learn.chatgpt.com/docs/developer-commands#codex-exec)
 and [Claude Code programmatic execution](https://code.claude.com/docs/en/headless).
 
