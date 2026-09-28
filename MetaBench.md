@@ -228,7 +228,7 @@ can consume the new workers' receipts without loading new agent-loop code.
 `runtime-topology.json` records assignments, queue pressure, worker identities and the
 adapter hash; the initial run manifest is retained. Compare execution intervals per
 VM after scaling, and disclose changed concurrency when interpreting results. An
-uncertain remote job stays fenced. No worker or VM is automatically shut down.
+uncertain remote job stays fenced. No VM is automatically stopped or deleted.
 
 Local layout:
 

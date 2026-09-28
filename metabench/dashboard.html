@@ -145,7 +145,7 @@
         const label=svgEl('g',{'data-series':s.config_id,class:'end-label',tabindex:0,role:'button','aria-label':'Highlight '+s.label+', round '+p.step+', score '+fmt(p.score)});
         label.append(svgEl('path',{d:'M'+x(p.step)+','+end.target+' L'+(right+7)+','+end.position+' H'+(labelX-3),stroke:st.color,class:'endpoint-leader'}));
         const name=svgEl('text',{x:labelX,y:end.position,class:'label-name'},shortLabel(s));name.style.fill=st.color;
-        const value=svgEl('text',{x:labelX,y:end.position+12},fmt(p.score)+' · r'+p.step);
+        const value=svgEl('text',{x:labelX,y:end.position+12},fmt(p.score)+' · r'+p.step+(p.scored_tasks<p.applicable_tasks?' · '+p.scored_tasks+'/'+p.applicable_tasks:''));
         label.append(name,value,svgEl('title',{},s.label+' · round '+p.step+': '+fmt(p.score)+' · '+coverage(p)));
         label.addEventListener('pointerenter',()=>highlightSeries(s.config_id));label.addEventListener('pointerleave',()=>highlightSeries(null));
         label.addEventListener('focus',()=>highlightSeries(s.config_id));label.addEventListener('blur',()=>highlightSeries(null));
