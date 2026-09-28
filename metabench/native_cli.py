@@ -153,7 +153,9 @@ def command(spec, session_id, mcp_path):
 
 
 def run_turn(spec, root, prompt, out, *, session_id=None, mcp_path, timeout=None, stop=None,
-             previous_usage=None, queue_wait=None, queue_timeout=None):
+             previous_usage=None, queue_wait=None, queue_timeout=None, budget_mode="active"):
+    if budget_mode not in ("active", "wall"):
+        raise ValueError("budget_mode must be active or wall")
     out = Path(out)
     out.mkdir(parents=True, exist_ok=False)
     argv = command(spec, session_id, mcp_path)
@@ -184,7 +186,8 @@ def run_turn(spec, root, prompt, out, *, session_id=None, mcp_path, timeout=None
                 clock = timing()
                 if queue_timeout is not None and clock["queue_wait_seconds"] >= queue_timeout:
                     raise RuntimeError("public test infrastructure wait limit exceeded")
-                if timeout is not None and clock["active_seconds"] >= timeout:
+                charged = clock["active_seconds"] if budget_mode == "active" else clock["wall_seconds"]
+                if timeout is not None and charged >= timeout:
                     raise subprocess.TimeoutExpired(argv, timeout)
                 try:
                     process.wait(timeout=.2)
@@ -221,7 +224,7 @@ def run_turn(spec, root, prompt, out, *, session_id=None, mcp_path, timeout=None
                     "active_seconds": wall - clock["queue_wait_seconds"]}
         infrastructure_error = str(error)
     result.update(seconds=measured["wall_seconds"], **measured, started_at=started_at,
-                  budget_mode="active" if queue_wait else "wall", returncode=process.returncode,
+                  budget_mode=budget_mode, returncode=process.returncode,
                   native_event_log=str(out / "events.jsonl"))
     result["provider"]["requested_reasoning"] = spec["reasoning"]
     if infrastructure_error:

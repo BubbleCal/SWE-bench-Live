@@ -256,8 +256,8 @@ def run_matrix(suite, repo, environments, matrix, out, *, vm_count=None, paralle
                     raise RuntimeError(f"{identity} turn {step} was interrupted before its checkpoint; inspect saved events before retrying")
                 turn = agent_runner(spec, checkout.root, prompt, turn_dir, session_id=session, mcp_path=mcp_path,
                                     timeout=matrix.get("round_timeout_seconds"), stop=stop, previous_usage=previous_usage,
-                                    queue_wait=(lambda start, end: queue.queued_seconds(identity, start, end))
-                                    if matrix["budget_mode"] == "active" else None,
+                                    queue_wait=lambda start, end: queue.queued_seconds(identity, start, end),
+                                    budget_mode=matrix["budget_mode"],
                                     queue_timeout=matrix["queue_timeout_seconds"] if matrix["budget_mode"] == "active" else None)
                 session = turn.get("session_id")
                 previous_usage = turn.get("provider", {}).get("session_usage")
