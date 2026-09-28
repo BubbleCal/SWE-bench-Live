@@ -1,0 +1,18 @@
+{
+  "agents": [
+    {"provider": "codex", "model": "gpt-6-astra", "reasoning": "high"},
+    {"provider": "codex", "model": "gpt-6-astra", "reasoning": "xhigh"},
+    {"provider": "codex", "model": "gpt-6-astra", "reasoning": "max"},
+    {"provider": "claude", "model": "claude-opus-5-5", "reasoning": "high"},
+    {"provider": "claude", "model": "claude-opus-5-5", "reasoning": "xhigh"},
+    {"provider": "claude", "model": "claude-opus-5-5", "reasoning": "max"}
+  ],
+  "max_rounds": 4,
+  "round_timeout_seconds": 900,
+  "test_timeout_seconds": 1800,
+  "vm_count": 1,
+  "vms": [
+    {"id": "vm-1", "host": "ubuntu@VM_1_HOST", "root": "/home/ubuntu/metabench", "ssh_args": ["-i", "/path/to/key.pem"]},
+    {"id": "vm-2", "host": "ubuntu@VM_2_HOST", "root": "/home/ubuntu/metabench", "ssh_args": ["-i", "/path/to/key.pem"]}
+  ]
+}
