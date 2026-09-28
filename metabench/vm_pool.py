@@ -69,6 +69,22 @@ class SSHVM:
                 raise ValueError("pinned image identity changed on VM " + self.id)
         return {"vm_id": self.id, "images": images}
 
+    def stage_base(self, base):
+        base = Path(base)
+        fingerprint = hashlib.sha256(base.read_bytes()).hexdigest()
+        remote_base = self.root / "assets" / (fingerprint + ".tar")
+        if fingerprint not in self.assets:
+            self.remote("mkdir -p " + shlex.quote(str(self.root / "assets")))
+            actual = self.python("from pathlib import Path;import hashlib,sys;p=Path(sys.argv[1]);print(hashlib.sha256(p.read_bytes()).hexdigest() if p.exists() else '')", remote_base).strip()
+            if actual != fingerprint:
+                self.copy(base, str(remote_base) + ".upload")
+                actual = self.python("from pathlib import Path;import hashlib,sys;print(hashlib.sha256(Path(sys.argv[1]).read_bytes()).hexdigest())", str(remote_base) + ".upload").strip()
+                if actual != fingerprint:
+                    raise ValueError("base archive transfer checksum mismatch on " + self.id)
+                self.remote("mv " + shlex.quote(str(remote_base) + ".upload") + " " + shlex.quote(str(remote_base)))
+            self.assets.add(fingerprint)
+        return {"base_archive": str(remote_base), "base_sha256": fingerprint}
+
     def status(self, identity):
         directory = self.root / "queue" / identity
         script = '''import json,sys
@@ -96,15 +112,7 @@ else: print(json.dumps({'state':'not_started'}))
         self.remote("mkdir -p " + shlex.quote(str(directory)) + " " + shlex.quote(str(self.root / "assets")))
         payload = dict(job["payload"])
         base = Path(payload.pop("base_archive"))
-        fingerprint = hashlib.sha256(base.read_bytes()).hexdigest()
-        remote_base = self.root / "assets" / (fingerprint + ".tar")
-        if fingerprint not in self.assets:
-            present = self.python("from pathlib import Path;import sys;print(Path(sys.argv[1]).exists())", remote_base).strip() == "True"
-            if not present:
-                self.copy(base, str(remote_base) + ".upload")
-                self.remote("mv " + shlex.quote(str(remote_base) + ".upload") + " " + shlex.quote(str(remote_base)))
-            self.assets.add(fingerprint)
-        payload.update(trial_id=job["trial_id"], kind=job["kind"], base_archive=str(remote_base), base_sha256=fingerprint)
+        payload.update(trial_id=job["trial_id"], kind=job["kind"], **self.stage_base(base))
         local_request = self.local / (identity + ".json")
         write_json(local_request, payload)
         self.copy(local_request, directory / "request.json.upload")

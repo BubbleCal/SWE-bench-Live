@@ -1,12 +1,15 @@
 """Parallel model/effort/issue trials driven by native CLI sessions."""
 import concurrent.futures
 import fcntl
+import hashlib
 import json
 import math
 import os
 import re
+import shutil
 import subprocess
 import sys
+import tarfile
 import threading
 import time
 import uuid
@@ -123,6 +126,45 @@ def run_matrix(suite, repo, environments, matrix, out, *, vm_count=None, paralle
         pool = VMPool(queue, vms, out / "control", vm_count=count, driver_factory=driver_factory)
         task_environments = list(environments["by_task"].values()) if "by_task" in environments else [environments]
         manifest["vm_preflight"] = {name: driver.prepare(task_environments) for name, driver in pool.drivers.items()}
+        # Share immutable base bytes, never a trial's mutable Git object database.
+        # Large transfers finish before any native model's budget starts.
+        manifest["status"] = "Preparing base assets"
+        atomic_json(manifest_path, manifest)
+        base_assets = out / "base-assets"
+        base_assets.mkdir(exist_ok=True)
+        required = {name: set() for name in pool.drivers}
+        for spec, task, folder, common in jobs:
+            checkout = TrialCheckout(repo, task["base_commit"], folder / "checkout")
+            canonical = base_assets / (task["base_commit"] + ".tar")
+            if not canonical.exists():
+                supplied = matrix.get("base_archives", {}).get(task["base_commit"])
+                if supplied:
+                    source = Path(supplied["path"])
+                    if hashlib.sha256(source.read_bytes()).hexdigest() != supplied["sha256"]:
+                        raise ValueError("prebuilt base archive checksum mismatch")
+                    with tarfile.open(source) as archive:
+                        metadata = json.load(archive.extractfile("base.json"))
+                    expected = json.loads(checkout.manifest.read_text())
+                    if metadata.get("commit") != checkout.base or metadata.get("tree") != expected["source_tree"]:
+                        raise ValueError("prebuilt archive belongs to a different Git base")
+                    shutil.copyfile(source, canonical)
+                else:
+                    checkout.base_archive(canonical)
+            base = folder / "base.tar"
+            if not base.exists():
+                shutil.copyfile(canonical, base)
+            required[common["vm_id"]].add(base)
+        def stage(name):
+            return [pool.drivers[name].stage_base(base) for base in sorted(required[name])]
+        try:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=count) as preparation:
+                manifest["base_asset_preflight"] = dict(zip(pool.drivers, preparation.map(stage, pool.drivers)))
+        except Exception as error:
+            manifest.update(status="Preflight failed", failures=[{"stage": "base-assets", "error": str(error)}])
+            atomic_json(manifest_path, manifest)
+            raise
+        manifest.setdefault("models_started_at", time.time())
+        manifest["status"] = "Running"
         atomic_json(manifest_path, manifest)
         pool.start()
         service = TestService(queue, pool)
@@ -237,6 +279,7 @@ def run_matrix(suite, repo, environments, matrix, out, *, vm_count=None, paralle
                 bad = result.get("status") == "infrastructure_error" or result.get("supplemental_status") == "needs_review" or any(
                     c["status"] not in ("passed", "test_failed", "measured") for c in result.get("checks", {}).values())
                 graded = {**row, **result, "evaluation_complete": True, "evaluation_job_id": job["id"],
+                          "initial_vm_id": row["vm_id"], "vm_id": job["vm_id"],
                           "evaluation_status": "needs_review" if bad else "scored",
                           "score_eligible": not bad and row["status"] in ("submitted", "round_timeout") and result.get("environment", {}).get("score_eligible", False),
                           "evaluation_queue_wait_seconds": job["started"] - job["created"]}

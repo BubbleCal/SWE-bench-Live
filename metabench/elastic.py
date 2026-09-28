@@ -110,6 +110,11 @@ def attach(run, specifications, *, max_vms=3, target_wait=180):
         env = manifest['environments'];environments = list(env['by_task'].values()) if 'by_task' in env else [env]
         pool = VMPool(queue, new, run/'elastic-control')
         preflight = {name: driver.prepare(environments) for name, driver in pool.drivers.items()}
+        bases = sorted((run/'base-assets').glob('*.tar'))
+        if not bases:  # Older runs exported the base only inside each trial.
+            bases = sorted((run/'trials').glob('*/base.tar'))
+        for name, driver in pool.drivers.items():
+            preflight[name]['base_assets'] = [driver.stage_base(base) for base in bases]
         record = {'experiment_id':manifest['experiment_id'], 'started_at':time.time(),
                   'initial_vms':original, 'vms':all_vms, 'preflight':preflight,
                   'overlay_sha256':hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),

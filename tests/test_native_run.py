@@ -39,13 +39,15 @@ class NativeMatrixTest(unittest.TestCase):
                 {'provider':'codex','model':'control-a','reasoning':'high'},
                 {'provider':'claude','model':'control-b','reasoning':'high'}],
                 'vms':[{'id':'vm-a'},{'id':'vm-b'}]}
-            control_lock=threading.Lock();calls=[];sessions={};rounds={};running=[0,0];prepared=[];second_started={}
+            control_lock=threading.Lock();calls=[];sessions={};rounds={};running=[0,0];prepared=[];second_started={};staged=[]
             increment=normalize({'input_tokens':10,'cached_input_tokens':4,'cache_write_input_tokens':0,
                                  'output_tokens':5,'reasoning_output_tokens':2})
 
             class Driver:
                 def __init__(self,spec,directory):self.id=spec['id'];self.jobs={}
                 def prepare(self,environments):prepared.append(self.id);return {'vm_id':self.id}
+                def stage_base(self,base):
+                    staged.append((self.id,Path(base).read_bytes()));return {'vm_id':self.id}
                 def launch(self,job):self.jobs[job['id']]=job
                 def wait(self,identity,stop):
                     job=self.jobs[identity]
@@ -59,6 +61,8 @@ class NativeMatrixTest(unittest.TestCase):
                 self.assertEqual(options['timeout'],900)
                 step=rounds.get(str(worktree),0)+1;rounds[str(worktree)]=step
                 self.assertEqual(set(prepared),{'vm-a','vm-b'})
+                self.assertEqual(len(staged),4)
+                self.assertEqual(len({archive for _,archive in staged}),1)
                 self.assertNotIn('HIDDEN_MARKER',prompt)
                 self.assertNotIn('critical_pass',prompt)
                 with control_lock:
@@ -101,6 +105,13 @@ class NativeMatrixTest(unittest.TestCase):
                 self.assertEqual(len(calls),16);self.assertEqual(len(resumed),16)
                 with self.assertRaisesRegex(ValueError,'configuration changed'):
                     run_matrix(suite,repo,env,matrix,out,parallel=1,resume=True,driver_factory=Driver,agent_runner=native)
+                class UnavailableDriver(Driver):
+                    def stage_base(self,base):raise RuntimeError('asset transport unavailable')
+                with self.assertRaisesRegex(RuntimeError,'asset transport unavailable'):
+                    run_matrix(suite,repo,env,matrix,root/'failed-preflight',driver_factory=UnavailableDriver,agent_runner=native)
+                self.assertEqual(len(calls),16)
+                self.assertEqual(json.loads((root/'failed-preflight/run.json').read_text())['status'],'Preflight failed')
+                self.assertFalse(list((root/'failed-preflight/trials').glob('*/turn-*')))
 
 
 if __name__=='__main__':unittest.main()

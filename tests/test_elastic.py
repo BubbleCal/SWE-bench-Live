@@ -52,6 +52,11 @@ class ElasticTest(unittest.TestCase):
             self.assertEqual(queue.get(first)['vm_id'],'vm1')
             self.assertEqual(queue.get(second)['vm_id'],'vm2')
             self.assertEqual(queue.get(third)['vm_id'],'vm2')
+            # A later identical checkpoint still uses the original controller's
+            # VM argument; its already-routed immutable job remains idempotent.
+            self.assertEqual(queue.enqueue('one','vm1','verify',{'patch':'c'},job_id=third),third)
+            with self.assertRaises(ValueError):
+                queue.enqueue('one','vm1','verify',{'patch':'changed'},job_id=third)
             self.assertIsNone(queue.claim('vm1','old-controller'))
             self.assertEqual(queue.claim('vm2','new-controller')['id'],second)
             with self.assertRaises(ValueError):

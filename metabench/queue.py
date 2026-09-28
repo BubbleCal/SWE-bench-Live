@@ -39,8 +39,14 @@ class TestQueue:
         with self.connect() as db:
             previous = db.execute("SELECT * FROM jobs WHERE id=?", (identity,)).fetchone()
             if previous:
-                if (previous["trial_id"], previous["vm_id"], previous["kind"], previous["payload"]) != (trial, vm, kind, encoded):
+                if (previous["trial_id"], previous["kind"], previous["payload"]) != (trial, kind, encoded):
                     raise ValueError("job id already belongs to different work")
+                if previous["vm_id"] != vm:
+                    routed = None
+                    if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='trial_vm_affinity'").fetchone():
+                        routed = db.execute("SELECT vm_id FROM trial_vm_affinity WHERE trial_id=?", (trial,)).fetchone()
+                    if not routed or routed["vm_id"] not in (previous["vm_id"], vm):
+                        raise ValueError("job id already belongs to a different VM")
                 return identity
             db.execute("INSERT INTO jobs(id,trial_id,vm_id,kind,payload,status,created) VALUES(?,?,?,?,?,'queued',?)",
                        (identity, trial, vm, kind, encoded, time.time()))

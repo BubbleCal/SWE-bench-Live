@@ -247,6 +247,10 @@ The controller calls `codex exec` or `claude -p` once per conversation round. Th
 reads/edits code and performs its own tool calls; no command-action JSON loop runs in
 metabench. Later rounds resume the exact saved session ID, never `--last` or `--continue`.
 A fixed self-review prompt starts each additional round without revealing hidden scores.
+Before starting any model, the controller creates the private worktrees and stages
+checksum-verified base archives on all assigned VMs. Trials with the same base reuse
+immutable archive bytes, while retaining separate Git object databases. Transfer
+failures therefore stop preflight rather than consuming a model's conversation budget.
 See the official [Codex command reference](https://learn.chatgpt.com/docs/developer-commands#codex-exec)
 and [Claude Code programmatic execution](https://code.claude.com/docs/en/headless).
 
