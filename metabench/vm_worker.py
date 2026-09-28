@@ -210,6 +210,14 @@ def run(root, job_dir):
                                   request["task"].get("verification_append"))
                 result = evaluate_workspace(request["task"], request["patch"], request["environment"], workspace, patches_applied=True)
                 result["kind"] = "verify"
+                if request["task"].get("supplemental"):
+                    from .checkpoint_eval import evaluate as evaluate_checkpoint
+                    try:
+                        result = evaluate_checkpoint(root, request, workspace, result)
+                    except Exception as error:
+                        result = {**result, "functional_score": result["score"], "functional_scores": result["scores"],
+                                  "scores": {"functional": result["score"], "performance": None, "future_evolution": None},
+                                  "score": None, "supplemental_status": "needs_review", "supplemental_error": str(error)}
         except Exception as error:
             result = {"status": "infrastructure_error", "error": str(error), "kind": request["kind"]}
         finally:

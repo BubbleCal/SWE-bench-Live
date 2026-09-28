@@ -78,6 +78,19 @@ def validate_task(task):
         raise ValueError("weights must name exactly the applicable dimensions")
     if any(isinstance(w, bool) or not isinstance(w, (int, float)) or not math.isfinite(w) or w <= 0 for w in weights.values()):
         raise ValueError("dimension weights must be finite and positive")
+    supplemental = task.get("supplemental")
+    if supplemental is not None:
+        if not isinstance(supplemental, dict) or not re.fullmatch(r"[a-z][a-z0-9_-]*", supplemental.get("crate", "")):
+            raise ValueError("supplemental evaluation requires a safe crate name")
+        for key in ("benchmark_source", "future_source"):
+            if not isinstance(supplemental.get(key), str) or not supplemental[key].strip():
+                raise ValueError("supplemental evaluation requires frozen Rust sources")
+        for key in ("repeats", "future_test_count"):
+            if type(supplemental.get(key)) is not int or supplemental[key] < 1:
+                raise ValueError("supplemental counts must be positive integers")
+        tolerance = supplemental.get("tolerance")
+        if isinstance(tolerance, bool) or not isinstance(tolerance, (int, float)) or not math.isfinite(tolerance) or not 0 <= tolerance <= 1:
+            raise ValueError("supplemental tolerance must be between zero and one")
     return task
 
 

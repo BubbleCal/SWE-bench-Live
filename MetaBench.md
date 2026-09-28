@@ -252,9 +252,15 @@ and [Claude Code programmatic execution](https://code.claude.com/docs/en/headles
 
 The configured `bench.run_tests` MCP tool snapshots current changes and queues a public
 test on the VM. Each trial has a capability limited to its own public test results.
-Hidden verification starts after that trial's complete trajectory; its results have no
-agent-facing endpoint. Public and verification lanes have separate Git databases and
+Each completed round immediately queues hidden verification of its immutable patch;
+the next native CLI round starts without waiting for that grade. Results publish as
+workers finish. Hidden results have no agent-facing endpoint. Public and verification lanes have separate Git databases and
 container filesystems, preventing hidden test objects from entering a reused public cache.
+Unchanged patch hashes share the same durable job, but a previously perfect score never
+skips verification of a changed patch. On resume, ungraded saved checkpoints are queued
+again with the same job identity. The run manifest records `checkpoint-pipeline-v1` as
+its evaluation schedule. Grading competes with public tests in the same FIFO queue;
+those waits count toward the native round's wall-clock budget.
 
 Tasks whose hidden tests live in the same files the agent edits can freeze a
 `verification_append` mapping from source path to `{ "source": "...", "namespace": "..." }`
@@ -263,6 +269,17 @@ candidate's exact bytes, preserving candidate-written tests. The reserved namesp
 test commands and any public-API facade are part of the validated task fingerprint.
 Validate base/reference controls again after changing this transport. Private helper
 signatures are not public compatibility contracts.
+
+Rust pilot tasks may also freeze a `supplemental` object containing `crate`,
+`benchmark_source`, `future_source`, `future_test_count`, `repeats`, and `tolerance`.
+The verifier runs these private sources in its own container, alongside a separate
+persistent historical-reference container. Each checkpoint job covers functional checks,
+paired performance measurements and downstream compatibility tests under one VM lock.
+The reference and candidate are timed alternately on CPU 2, excluding compilation.
+Scores use functional 60%, performance 20%, compatibility 20%; a critical functional
+failure gates the total to zero and excludes performance. Missing tests, failed reference
+controls and measurement/build failures remain reviewable rather than receiving invented
+scores. These consumer tests measure only their frozen scope, not arbitrary future changes.
 
 VM layout and locking:
 

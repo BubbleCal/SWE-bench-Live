@@ -13,6 +13,7 @@ from metabench.evaluate import evaluate, validate
 from metabench.native_run import run_matrix
 from metabench.schema import freeze, task_fingerprint
 from metabench.test_mcp import request
+from metabench.queue import TestQueue
 from metabench.usage import add, normalize
 
 
@@ -38,7 +39,7 @@ class NativeMatrixTest(unittest.TestCase):
                 {'provider':'codex','model':'control-a','reasoning':'high'},
                 {'provider':'claude','model':'control-b','reasoning':'high'}],
                 'vms':[{'id':'vm-a'},{'id':'vm-b'}]}
-            control_lock=threading.Lock();calls=[];sessions={};rounds={};running=[0,0];prepared=[]
+            control_lock=threading.Lock();calls=[];sessions={};rounds={};running=[0,0];prepared=[];second_started={}
             increment=normalize({'input_tokens':10,'cached_input_tokens':4,'cache_write_input_tokens':0,
                                  'output_tokens':5,'reasoning_output_tokens':2})
 
@@ -49,6 +50,9 @@ class NativeMatrixTest(unittest.TestCase):
                 def wait(self,identity,stop):
                     job=self.jobs[identity]
                     if job['kind']=='public':return {'execution':{'returncode':0,'output':'PUBLIC ONLY'}}
+                    if job['payload']['patch']=='':
+                        event=second_started.setdefault(job['trial_id'],threading.Event())
+                        if not event.wait(3):raise RuntimeError('grading blocked the next native round')
                     return evaluate(repo,job['payload']['task'],job['payload']['patch'],{},trusted_local=True)
 
             def native(spec,worktree,prompt,out,**options):
@@ -65,6 +69,12 @@ class NativeMatrixTest(unittest.TestCase):
                         sessions[str(worktree)]=str(uuid.uuid4())
                         self.assertIsNone(options['previous_usage'])
                     else:
+                        first=json.loads((worktree.parent.parent/'checkpoint-1.json').read_text())
+                        second_started.setdefault(first['trial_id'],threading.Event()).set()
+                        queued=TestQueue(root/'run/queue.sqlite').for_trial(first['trial_id'],'verify')
+                        self.assertTrue(queued, 'round 1 must be queued before round 2 starts')
+                        original=next(j for j in queued if j['payload']['patch']=='')
+                        self.assertNotIn('return a+b',original['payload']['patch'])
                         self.assertEqual(options['session_id'],sessions[str(worktree)])
                         if spec['provider']=='codex':self.assertEqual(options['previous_usage']['total_tokens'],15*(step-1))
                         (worktree/'calc.py').write_text('def add(a,b):\n    return a+b\n')

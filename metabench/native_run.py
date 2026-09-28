@@ -68,10 +68,10 @@ def run_matrix(suite, repo, environments, matrix, out, *, vm_count=None, paralle
             identities[key] = cli_identity(spec)
     configuration = {"protocol": PROTOCOL, "suite_id": suite["suite_id"], "matrix": matrix,
                      "vm_count": count, "parallel_agents": workers, "environments": environments,
-                     "native_cli": identities,
+                     "native_cli": identities, "evaluation_schedule": "checkpoint-pipeline-v1",
                      "execution_source_hash": digest({name: Path(__file__).with_name(name).read_text() for name in (
                          "native_run.py", "native_cli.py", "checkouts.py", "queue.py", "test_service.py", "test_mcp.py",
-                         "vm_pool.py", "vm_worker.py", "verification.py", "evaluate.py", "process.py", "usage.py", "schema.py")})}
+                         "vm_pool.py", "vm_worker.py", "checkpoint_eval.py", "verification.py", "evaluate.py", "process.py", "usage.py", "schema.py")})}
     experiment = digest(configuration)
     if out.exists() and not resume:
         raise ValueError("output exists; use --resume for this exact matrix")
@@ -111,7 +111,8 @@ def run_matrix(suite, repo, environments, matrix, out, *, vm_count=None, paralle
                     common = {"suite_id": suite["suite_id"], "protocol_id": PROTOCOL, "config_id": config_id,
                               "model": spec["model"], "reasoning": spec["reasoning"], "provider": spec["provider"],
                               "task_id": task["instance_id"], "repeat": repeat, "trial_id": identity, "vm_id": vm,
-                              "artifact_directory": str(folder), "score_dimensions": sorted(task["weights"])}
+                              "artifact_directory": str(folder), "score_dimensions":
+                              ["functional", "performance", "future_evolution"] if task.get("supplemental") else sorted(task["weights"])}
                     jobs.append((spec, task, folder, common))
                     for step in range(1, rounds + 1):
                         saved = folder / f"score-{step}.json"
@@ -164,7 +165,19 @@ def run_matrix(suite, repo, environments, matrix, out, *, vm_count=None, paralle
             cumulative = usage.empty()
             observed = {k: 0 for k in usage.FIELDS if k != "cost_usd"}
             seconds = 0.0
-            checkpoints = []
+            def submit_grade(row):
+                # The payload owns an immutable patch string. Grading never reads
+                # the live checkout that the next native turn is already editing.
+                if rows[identity, row["step"]].get("evaluation_complete"):
+                    return
+                payload = {"base_archive": str(base), "environment": env, "task": task,
+                           "patch": (folder / f"step-{row['step']}.patch").read_text()}
+                job = queue.enqueue(identity, common["vm_id"], "verify", payload,
+                    job_id=digest({"trial": identity, "patch": row["patch_hash"], "task": task, "kind": "verify"})[:32])
+                with row_lock:
+                    future = graders.submit(grade, folder, [row], {row["patch_hash"]: job})
+                    grading_futures[future] = common
+
             for step in range(1, rounds + 1):
                 checkpoint = folder / f"checkpoint-{step}.json"
                 if checkpoint.exists():
@@ -172,7 +185,7 @@ def run_matrix(suite, repo, environments, matrix, out, *, vm_count=None, paralle
                     session, cumulative, seconds = row.get("session_id"), row["usage"], row["seconds"]
                     previous_usage = row.get("native_turn", {}).get("provider", {}).get("session_usage")
                     observed = {k: row.get("observed_usage_lower_bound", {}).get(k, row["usage"].get(k) or 0) for k in observed}
-                    checkpoints.append(row)
+                    submit_grade(row)
                     continue
                 if stop.is_set():
                     break
@@ -207,34 +220,21 @@ def run_matrix(suite, repo, environments, matrix, out, *, vm_count=None, paralle
                        "observed_usage_lower_bound": {**observed, "total_tokens": observed["input_tokens"] + observed["output_tokens"]},
                        "score_eligible": False, "agent_steps": step}
                 atomic_json(checkpoint, row)
-                checkpoints.append(row)
                 print(f"TRIAL {identity[:8]} {spec['model']}/{spec['reasoning']} {task['instance_id']} round={step} {turn['status']}", flush=True)
                 with row_lock:
                     rows[identity, step] = row
                     publish()
+                submit_grade(row)
                 if turn["status"] not in ("submitted", "round_timeout") or not session:
                     break
             service.seal(identity)
-            if stop.is_set():
-                return
-            grade_jobs = {}
-            for row in checkpoints:
-                patch_hash = row["patch_hash"]
-                if patch_hash not in grade_jobs:
-                    payload = {"base_archive": str(base), "environment": env, "task": task,
-                               "patch": (folder / f"step-{row['step']}.patch").read_text()}
-                    grade_jobs[patch_hash] = queue.enqueue(identity, common["vm_id"], "verify", payload,
-                        job_id=digest({"trial": identity, "patch": patch_hash, "task": task, "kind": "verify"})[:32])
-            with row_lock:
-                future = graders.submit(grade, folder, checkpoints, grade_jobs)
-                grading_futures[future] = common
 
         def grade(folder, checkpoints, grade_jobs):
             for row in checkpoints:
                 identity = row["trial_id"]
                 job = pool.await_job(grade_jobs[row["patch_hash"]])
                 result = job["result"]
-                bad = result.get("status") == "infrastructure_error" or any(
+                bad = result.get("status") == "infrastructure_error" or result.get("supplemental_status") == "needs_review" or any(
                     c["status"] not in ("passed", "test_failed", "measured") for c in result.get("checks", {}).values())
                 graded = {**row, **result, "evaluation_complete": True, "evaluation_job_id": job["id"],
                           "evaluation_status": "needs_review" if bad else "scored",
