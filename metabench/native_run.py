@@ -286,7 +286,7 @@ def run_matrix(suite, repo, environments, matrix, out, *, vm_count=None, paralle
                 if bad:
                     graded["score"] = None
                 atomic_json(folder / f"score-{row['step']}.json", graded)
-                print(f"GRADED {identity[:8]} round={row['step']} score={graded.get('score')} vm={row['vm_id']}", flush=True)
+                print(f"GRADED {identity[:8]} round={row['step']} score={graded.get('score')} vm={graded['vm_id']}", flush=True)
                 with row_lock:
                     rows[identity, row["step"]] = graded
                     publish()
