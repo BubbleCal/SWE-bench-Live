@@ -324,6 +324,10 @@ also exports separate PNG/SVG figures.
 The x-axis is the submission round; the y-axis is score (0–100). Each figure contains
 all model/reasoning configurations, with consistent colors, line styles and markers.
 HTML supports model/effort filters, individual tasks, round details and token totals.
+The performance chart defaults to an automatically zoomed y-axis across the visible
+configurations and rounds, with its displayed range explicitly labelled. Uncheck
+**Zoom performance axis** to restore the full 0–100 scale. Task/model filters update
+the range; scores and aggregation stay unchanged. Hover and table values use two decimals.
 The live `dashboard` command refreshes producer updates while retaining selections.
 Static image exports include a zoom inset for close scores; points are never jittered.
 

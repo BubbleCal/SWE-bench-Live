@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Meta-bench · live results</title>
 <style>
-:root{color-scheme:light dark;--bg:#f6f7fa;--fg:#172333;--panel:#fff;--muted:#566479;--line:#dde3eb;--accent:#1d4ed8;--warn:#a45606;--c0:#2563eb;--c1:#13835c;--c2:#ce630c;--c3:#8c3ac9;--c4:#cd2265;--c5:#00849b}
-@media(prefers-color-scheme:dark){:root{--bg:#14191f;--fg:#e7edf5;--panel:#1c242d;--muted:#a5b3c4;--line:#364351;--accent:#93b4ff;--warn:#ffbe70;--c0:#79a6ff;--c1:#67d5ac;--c2:#ffba70;--c3:#c299ff;--c4:#ff88b7;--c5:#6dd6e8}}
+:root{color-scheme:light dark;--bg:#f6f7fa;--fg:#172333;--panel:#fff;--muted:#566479;--line:#dde3eb;--accent:#1d4ed8;--warn:#a45606;--c0:#2563eb;--c1:#13835c;--c2:#ce630c;--c3:#8c3ac9;--c4:#cd2265;--c5:#00849b;--c6:#657225}
+@media(prefers-color-scheme:dark){:root{--bg:#14191f;--fg:#e7edf5;--panel:#1c242d;--muted:#a5b3c4;--line:#364351;--accent:#93b4ff;--warn:#ffbe70;--c0:#79a6ff;--c1:#67d5ac;--c2:#ffba70;--c3:#c299ff;--c4:#ff88b7;--c5:#6dd6e8;--c6:#d0dc84}}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}main{max-width:1500px;margin:auto;padding:30px 28px 50px}h1{font-size:28px;font-weight:650;margin:0 0 6px}h2{font-size:18px;font-weight:600;margin:0 0 10px}p{margin:4px 0}.muted{color:var(--muted)}.header{display:flex;justify-content:space-between;gap:20px;align-items:start;flex-wrap:wrap}.status{font-size:13px;text-align:right}.status strong{display:block;font-size:15px;color:var(--accent)}.warning{color:var(--warn)}.toolbar{display:flex;gap:18px;flex-wrap:wrap;align-items:end;margin:20px 0}button,select,input{font:inherit}button,select{background:var(--panel);color:var(--fg);border:1px solid var(--line);border-radius:7px;padding:7px 11px}button{cursor:pointer}button:hover{border-color:var(--accent)}button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:3px}label{cursor:pointer}.switch{display:flex;gap:7px;align-items:center}input[type=checkbox]{accent-color:var(--accent);width:17px;height:17px}fieldset{border:0;padding:0;margin:0}legend{font-size:13px;color:var(--muted);margin-bottom:6px}.models{display:flex;gap:30px;flex-wrap:wrap;padding:16px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}.choices{display:flex;gap:14px;flex-wrap:wrap}.choice{display:flex;align-items:center;gap:6px;min-height:28px}.swatch{display:inline-block;width:21px;border-top:3px solid var(--series)}.swatch[data-effort=xhigh]{border-top-style:dashed}.swatch[data-effort=max]{border-top-style:dotted}.progress{margin:16px 0 6px;display:flex;gap:24px;flex-wrap:wrap;font-variant-numeric:tabular-nums}.progress b{font-weight:600}.note{font-size:13px;color:var(--muted);margin:8px 0 18px;max-width:1150px}.charts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}.chart{min-width:0;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px 14px 14px;position:relative}.chart h2{padding-left:4px}.chart svg{display:block;width:100%;height:285px;overflow:visible}.chart text{fill:var(--muted);font-family:inherit;font-size:12px}.chart .axis-title{fill:var(--fg)}.chart .grid{stroke:var(--line);stroke-width:1}.chart .axis{stroke:var(--muted);stroke-width:1}.chart .line{fill:none;stroke-width:2.4;stroke-linejoin:round}.chart .mark{stroke-width:2;fill:var(--panel)}.chart .guide{stroke:var(--muted);stroke-width:1;stroke-dasharray:3 4}.chart .hit{fill:transparent;cursor:crosshair}.chart .empty{font-size:13px}.chart-note{font-size:12px;min-height:36px;color:var(--muted);padding:0 4px}.tooltip{position:fixed;z-index:5;pointer-events:none;background:var(--panel);color:var(--fg);border:1px solid var(--line);box-shadow:0 6px 20px #0002;border-radius:8px;padding:10px 13px;font-size:12px;max-width:calc(100vw - 24px)}.tooltip[hidden]{display:none}.tooltip .tip-row{display:flex;gap:14px;justify-content:space-between;font-variant-numeric:tabular-nums}.tooltip strong{display:block;margin-bottom:4px}.details{margin-top:22px}.round-control{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.round-control input{width:180px}.table-wrap{overflow-x:auto;margin-top:12px}table{width:100%;border-collapse:collapse;font-size:13px;text-align:left}th,td{padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}th{font-weight:550;color:var(--muted);white-space:nowrap}td:not(:first-child){font-variant-numeric:tabular-nums}td small{display:block;color:var(--muted);font-size:11px}.model-cell{min-width:190px}.foot{font-size:12px;color:var(--muted);margin-top:16px}.error{margin-top:8px;font-size:13px;color:var(--warn)}.hidden{display:none!important}
 @media(max-width:1050px){.charts{grid-template-columns:1fr}.chart svg{height:300px}.chart-note{min-height:0}}@media(max-width:520px){main{padding:20px 14px}.status{text-align:left}h1{font-size:24px}.models{gap:16px}.toolbar{gap:12px}.chart{padding:14px 8px}.chart svg{height:265px}.progress{gap:8px 20px;font-size:13px}.table-wrap{margin-right:-4px}}
 </style>
@@ -15,7 +15,7 @@
 <main>
   <header class="header"><div><h1 id="title">Meta-bench</h1><p class="muted" id="subtitle">Score by submission round</p></div><div class="status" aria-live="polite"><strong id="connection">Snapshot</strong><span id="updated"></span></div></header>
   <div id="error" class="error" role="alert" hidden></div>
-  <div class="toolbar"><label>Task<br><select id="task" aria-label="Task"><option value="">All tasks</option></select></label><label class="switch"><input id="auto" type="checkbox" checked>Auto refresh · 5s</label><button id="refresh" type="button">Refresh now</button><button id="download" type="button">Download snapshot</button></div>
+  <div class="toolbar"><label>Task<br><select id="task" aria-label="Task"><option value="">All tasks</option></select></label><label class="switch"><input id="zoom-performance" type="checkbox" checked>Zoom performance axis</label><label class="switch"><input id="auto" type="checkbox" checked>Auto refresh · 5s</label><button id="refresh" type="button">Refresh now</button><button id="download" type="button">Download snapshot</button></div>
   <div id="models" class="models" aria-label="Visible model configurations"></div>
   <div id="progress" class="progress" aria-live="polite"></div>
   <p id="note" class="note"></p>
@@ -29,19 +29,33 @@
 (() => {
   'use strict';
   const boot=JSON.parse(document.getElementById('metabench-data').textContent);
-  let data=boot.data, busy=false, poll=null, selected=new Set(), selectedTask='', round=Math.max(...data.steps,1);
+  let data=boot.data, busy=false, poll=null, selected=new Set(), selectedTask='', zoomPerformance=true, round=Math.max(...data.steps,1);
   const $=id=>document.getElementById(id), ns='http://www.w3.org/2000/svg', storageKey='metabench:'+data.suite_id;
   const dashed=['','7 4','2 4'], metricNames={functional:'Functional',performance:'Performance',future_evolution:'Evolution compatibility'};
-  const fmt=n=>n==null?'Pending':Number(n).toFixed(1), integer=n=>Number(n).toLocaleString();
+  const fmt=n=>n==null?'Pending':Number(n).toFixed(2), integer=n=>Number(n).toLocaleString();
   const text=(tag,value,className)=>{const n=document.createElement(tag);n.textContent=value;if(className)n.className=className;return n;};
   const svgEl=(tag,attrs={},value)=>{const n=document.createElementNS(ns,tag);for(const [k,v] of Object.entries(attrs))n.setAttribute(k,v);if(value!==undefined)n.textContent=value;return n;};
-  const style=s=>({color:'var(--c'+(data.series.indexOf(s)%6)+')',dash:dashed[Math.max(0,['high','xhigh','max'].indexOf(s.reasoning))%3]});
-  function restore(){try{const old=JSON.parse(localStorage.getItem(storageKey));selected=new Set(old?old.selected:data.series.map(s=>s.config_id));selectedTask=old?.task||'';round=old?.round||round;}catch{selected=new Set(data.series.map(s=>s.config_id));}}
-  function save(){try{localStorage.setItem(storageKey,JSON.stringify({selected:[...selected],task:selectedTask,round}));}catch{}}
+  const style=s=>({color:'var(--c'+(data.series.indexOf(s)%7)+')',dash:dashed[Math.max(0,['high','xhigh','max'].indexOf(s.reasoning))%3]});
+  function restore(){try{const old=JSON.parse(localStorage.getItem(storageKey));selected=new Set(old?old.selected:data.series.map(s=>s.config_id));selectedTask=old?.task||'';round=old?.round||round;zoomPerformance=old?.zoomPerformance??true;}catch{selected=new Set(data.series.map(s=>s.config_id));}}
+  function save(){try{localStorage.setItem(storageKey,JSON.stringify({selected:[...selected],task:selectedTask,round,zoomPerformance}));}catch{}}
   function dimensions(){return selectedTask?(data.task_charts[selectedTask]||[]):data.charts;}
   function point(chart,id,step){return chart?.points[id]?.find(p=>p.step===step)||{step,score:null,scored_tasks:0,applicable_tasks:chart?(selectedTask?1:data.tasks.length):0,missing_tasks:[],excluded_tasks:[]};}
   function labelPoint(p){if(p.score!=null)return fmt(p.score);if(!p.applicable_tasks)return 'Not applicable';if(!p.missing_tasks?.length&&p.excluded_tasks?.length===p.applicable_tasks)return 'Excluded';return 'Pending';}
   function coverage(p){return p.scored_tasks+'/'+p.applicable_tasks+' tasks'+(p.excluded_tasks?.length?' · '+p.excluded_tasks.length+' excluded':'');}
+  function scoreAxis(dimension,chart){
+    const full={min:0,max:105,ticks:[0,20,40,60,80,100],note:''};
+    if(dimension!=='performance'||!zoomPerformance)return full;
+    const values=data.series.filter(s=>selected.has(s.config_id)).flatMap(s=>data.steps.map(step=>point(chart,s.config_id,step).score)).filter(Number.isFinite);
+    if(!values.length)return full;
+    const lo=Math.min(...values),hi=Math.max(...values),padding=Math.max(.25,(hi-lo)*.2);
+    let lower=Math.max(0,lo-padding),upper=Math.min(100,hi+padding);
+    if(upper-lower<1){lower=Math.max(0,Math.min(lower,(lo+hi)/2-.5));upper=Math.min(100,Math.max(upper,lower+1));lower=Math.max(0,Math.min(lower,upper-1));}
+    const rough=(upper-lower)/4,power=10**Math.floor(Math.log10(rough));
+    const step=[1,2,2.5,5,10].find(n=>n*power>=rough)*power;
+    lower=Math.max(0,Math.floor(lower/step)*step);upper=Math.min(100,Math.ceil(upper/step)*step);
+    const ticks=[];for(let v=lower;v<=upper+step/100;v+=step)ticks.push(Number(v.toFixed(6)));
+    return {min:lower,max:upper+(upper-lower)*.05,ticks,note:'Zoomed y-axis: '+lower+'–'+upper+'; compare tick values. Uncheck “Zoom performance axis” for 0–100.'};
+  }
   function configure(){
     $('title').textContent=data.metadata.title||'Meta-bench';
     $('subtitle').textContent=data.metadata.subtitle||'Current checkpoint scores · one chart per dimension';
@@ -60,6 +74,7 @@
     const prog=data.metadata.progress;$('progress').replaceChildren();
     if(prog){for(const [key,label] of [['generated','Generated'],['functional','Functional graded'],['performance','Performance graded'],['evolution','Evolution graded']]){if(prog[key]!=null){const p=text('span',label+' ');p.append(text('b',prog[key]+'/'+prog.planned));$('progress').append(p);}}}
     $('round').max=Math.max(...data.steps,1);round=Math.min(Math.max(1,round),Number($('round').max));$('round').value=round;
+    $('zoom-performance').checked=zoomPerformance;
     $('auto').disabled=!boot.live;$('refresh').disabled=!boot.live;if(!boot.live)$('auto').checked=false;
   }
   function renderStatus(failed=false){
@@ -75,8 +90,10 @@
       const width=Math.max(250,panel.clientWidth-28),height=window.innerWidth<520?265:window.innerWidth<1050?300:285;
       const left=47,right=width-16,top=12,bottom=height-43,last=Math.max(...data.steps,1);
       svg.setAttribute('viewBox','0 0 '+width+' '+height);
-      const x=n=>left+8+(n-1)/Math.max(1,last-1)*(right-left-16),y=n=>bottom-n/105*(bottom-top);
-      for(let v=0;v<=100;v+=20){svg.append(svgEl('line',{x1:left,x2:right,y1:y(v),y2:y(v),class:'grid'}),svgEl('text',{x:left-9,y:y(v)+4,'text-anchor':'end'},v));}
+      const axis=scoreAxis(base.dimension,chart);
+      svg.setAttribute('data-y-min',axis.min);svg.setAttribute('data-y-max',axis.max);
+      const x=n=>left+8+(n-1)/Math.max(1,last-1)*(right-left-16),y=n=>bottom-(n-axis.min)/(axis.max-axis.min)*(bottom-top);
+      for(const v of axis.ticks){svg.append(svgEl('line',{x1:left,x2:right,y1:y(v),y2:y(v),class:'grid'}),svgEl('text',{x:left-9,y:y(v)+4,'text-anchor':'end'},v));}
       svg.append(svgEl('line',{x1:left,x2:right,y1:bottom,y2:bottom,class:'axis'}));
       for(const n of data.steps)svg.append(svgEl('text',{x:x(n),y:bottom+21,'text-anchor':'middle'},n));
       svg.append(svgEl('text',{x:(left+right)/2,y:height-4,'text-anchor':'middle',class:'axis-title'},'Round'),svgEl('text',{transform:'translate(13 '+((top+bottom)/2)+') rotate(-90)','text-anchor':'middle',class:'axis-title'},'Score'));
@@ -104,7 +121,7 @@
         if(pin){round=step;$('round').value=round;save();draw();}
       }
       overlay.addEventListener('pointermove',e=>inspect(e));overlay.addEventListener('click',e=>inspect(e,true));overlay.addEventListener('pointerleave',()=>{$('tooltip').hidden=true;guide.setAttribute('x1',x(round));guide.setAttribute('x2',x(round));});
-      panel.append(text('p',incomplete.length?'Pending or partial: '+incomplete.join(' · '):'All displayed configurations have complete eligible checkpoints.','chart-note'));
+      panel.append(text('p',(axis.note?axis.note+' ':'')+(incomplete.length?'Pending or partial: '+incomplete.join(' · '):'All displayed configurations have complete eligible checkpoints.'),'chart-note'));
     }table();
   }
   function table(){
@@ -129,6 +146,7 @@
     }catch{renderStatus(true);$('error').textContent='Could not refresh. The last valid results remain visible; automatic retry continues.';$('error').hidden=false;}finally{busy=false;}
   }
   $('task').addEventListener('change',()=>{selectedTask=$('task').value;save();draw();});
+  $('zoom-performance').addEventListener('change',()=>{zoomPerformance=$('zoom-performance').checked;save();draw();});
   $('round').addEventListener('input',()=>{round=Number($('round').value);save();draw();});
   $('refresh').addEventListener('click',refresh);
   $('auto').addEventListener('change',()=>{if($('auto').checked)refresh();});
