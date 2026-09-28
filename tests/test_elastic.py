@@ -11,7 +11,7 @@ from metabench.vm_pool import VMPool
 
 class ElasticTest(unittest.TestCase):
     def test_original_controller_observes_jobs_finished_by_attached_workers(self):
-        active={};lock=threading.Lock();peak=[0];started=threading.Event();release=threading.Event()
+        active={};lock=threading.Lock();peak=[0];started=threading.Event();added_started=threading.Event();release=threading.Event()
         class Driver:
             def __init__(self,spec,directory):self.id=spec['id']
             def launch(self,job):
@@ -20,8 +20,9 @@ class ElasticTest(unittest.TestCase):
                     if active[self.id]!=1:raise AssertionError('same VM overlap')
                     peak[0]=max(peak[0],sum(active.values()))
                 if self.id=='vm1':started.set()
+                else:added_started.set()
             def wait(self,identity,stop):
-                if self.id=='vm1':release.wait(2)
+                if self.id=='vm1':release.wait(10)
                 time.sleep(.03)
                 with lock:active[self.id]-=1
                 return {'actual_vm':self.id}
@@ -32,7 +33,9 @@ class ElasticTest(unittest.TestCase):
             self.assertTrue(started.wait(2));install_routes(queue)
             added=VMPool(queue,[{'id':'vm2'},{'id':'vm3'}],root/'new',driver_factory=Driver).start()
             try:
-                distribute(queue,['vm1','vm2','vm3']);release.set()
+                distribute(queue,['vm1','vm2','vm3'])
+                self.assertTrue(added_started.wait(5))
+                release.set()
                 results=[original.await_job(identity)['result'] for identity in identities]
                 self.assertEqual({r['actual_vm'] for r in results},{'vm1','vm2','vm3'})
                 self.assertGreater(peak[0],1)
