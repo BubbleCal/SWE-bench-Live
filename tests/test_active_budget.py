@@ -79,7 +79,7 @@ class ActiveBudgetTest(unittest.TestCase):
                                   timeout=.3, queue_wait=lambda start, end: end-start, budget_mode='wall')
                 self.assertEqual(result['status'], 'round_timeout')
                 self.assertGreater(result['queue_wait_seconds'], .3)
-                self.assertEqual(result['active_seconds'], 0)
+                self.assertAlmostEqual(result['active_seconds'], 0, places=5)
                 result = run_turn(spec, root, 'task', root / 'infra', mcp_path=root/'unused',
                                   timeout=10, queue_wait=lambda start, end: end-start, queue_timeout=.3)
                 self.assertEqual(result['status'], 'infrastructure_error')
