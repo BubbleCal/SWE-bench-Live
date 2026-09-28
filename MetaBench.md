@@ -27,8 +27,10 @@ Its tests are embedded in the same Rust file as the solution. The example separa
 at the inline test-module boundary and removes an implementation-specific panic-message
 assertion. It is a reviewed historical pilot, not a representative Lance benchmark suite.
 
-Future-requirement replay, subjective code review scores, automatic task-family sampling,
-confidence intervals, model rankings, and token/cost enforcement are not implemented yet.
+Automatic discovery of future requirements, subjective code review scores, automatic
+task-family sampling, confidence intervals, model rankings, and token/cost enforcement
+are not implemented yet. Curated future patches and consumer probes can be frozen into
+the supplemental evaluator described below.
 No placeholder score is assigned to an unsupported dimension. The native runner defaults to at most **4 user-level conversation rounds**, with a **900-second (15-minute) active budget per round**. Active time is turn wall time minus the union of this trial's public-test queue, dispatch and VM-lock waits. Reasoning, editing, compilation and test execution consume the budget. Overlapping waits are deducted once and clipped at round boundaries; hidden grading never directly grants extra budget. Set `max_rounds` and `round_timeout_seconds` to override these defaults; explicit `null` disables the deadline. `budget_mode: "wall"` is an explicitly separate protocol. The resolved defaults are frozen in the run manifest. CLI tool iteration and context management remain native.
 
 Each turn and checkpoint records `active_seconds`, `queue_wait_seconds`, and `wall_seconds`; checkpoint values are cumulative for that trial. An executing public test remains charged even if the same trial has another request queued. This is an elapsed-time budget, not a measurement of model inference CPU time; work the native CLI overlaps with a queue wait is not separately attributable. The dashboard shows mean cumulative times per trial, not campaign elapsed time. Token counters remain observations. The separate `queue_timeout_seconds` infrastructure watchdog defaults to 7200 seconds per round: exceeding it is an infrastructure error, never model failure. It can be explicitly set to `null`. VM acquisition is reported live and mapped from remote elapsed duration to controller time, so VM lock contention is excluded before the command finishes.
