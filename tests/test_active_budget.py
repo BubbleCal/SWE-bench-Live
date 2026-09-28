@@ -42,13 +42,17 @@ class ActiveBudgetTest(unittest.TestCase):
             ]:
                 job = queue.enqueue(trial, 'vm', kind, {})
                 with queue.connect() as db:
-                    db.execute('UPDATE jobs SET created=?,started=?,resource_started=? WHERE id=?',
-                               (created, claimed, ready, job))
+                    db.execute('UPDATE jobs SET created=?,started=?,resource_started=?,finished=? WHERE id=?',
+                               (created, claimed, ready, ready, job))
             # 10..16 plus 18..20. The second wait overlaps; the first began
             # in the preceding round; claim at 11 is not lock acquisition at 14.
             self.assertEqual(queue.queued_seconds('one', 10, 20), 8)
             self.assertEqual(queue.queued_seconds('one', 16, 18), 0)
             self.assertEqual(queue.queued_seconds('one', 20, 23), 3)
+            with queue.connect() as db:
+                db.execute("UPDATE jobs SET finished=19 WHERE trial_id='one' AND kind='public' AND created=5")
+            # Own execution 14..19 overlaps 3 seconds of those queued intervals.
+            self.assertEqual(queue.queued_seconds('one', 10, 20), 5)
 
     def test_queued_native_turn_can_exceed_wall_budget_but_execution_cannot(self):
         with tempfile.TemporaryDirectory() as temp:

@@ -88,25 +88,35 @@ class TestQueue:
 
         Dispatch and remote lock acquisition are infrastructure wait too. A job
         from an interrupted turn only contributes its overlap with this turn.
-        Concurrent waits are counted once, not added as extra free time.
+        Concurrent waits are counted once. A queued second request cannot give
+        free time to this trial's already executing first request.
         """
         with self.connect() as db:
             rows = db.execute("SELECT created,resource_started,started,finished,status FROM jobs "
                               "WHERE trial_id=? AND kind='public' AND created<? "
-                              "AND (resource_started IS NULL OR resource_started>?)",
+                              "AND (finished IS NULL OR finished>?)",
                               (trial, end, start)).fetchall()
-        total, previous = 0.0, start
-        intervals = []
+        waits, execution = [], []
         for row in rows:
             ready = row["resource_started"]
             if ready is None and row["status"] == "completed":
                 ready = row["started"]  # Completed receipts from older protocols.
-            intervals.append((max(start, row["created"]), min(end, ready if ready is not None else end)))
-        for left, right in sorted(intervals):
-            if right > max(left, previous):
-                total += right - max(left, previous)
-                previous = right
-        return total
+            waits.append((max(start, row["created"]), min(end, ready if ready is not None else end)))
+            if ready is not None:
+                execution.append((max(start, ready), min(end, row["finished"] or end)))
+        def union(intervals):
+            merged = []
+            for left, right in sorted(intervals):
+                if right <= left:
+                    continue
+                if merged and left <= merged[-1][1]:
+                    merged[-1] = (merged[-1][0], max(merged[-1][1], right))
+                else:
+                    merged.append((left, right))
+            return merged
+        waits, execution = union(waits), union(execution)
+        overlap = sum(max(0, min(b, d) - max(a, c)) for a, b in waits for c, d in execution)
+        return sum(right - left for left, right in waits) - overlap
 
     def get(self, identity):
         with self.connect() as db:
