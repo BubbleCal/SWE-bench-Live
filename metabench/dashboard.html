@@ -88,7 +88,7 @@
       const chart=dimensions().find(c=>c.dimension===base.dimension),panel=text('article','','chart');panel.dataset.dimension=base.dimension;panel.append(text('h2',metricNames[base.dimension]||base.title));
       const svg=svgEl('svg',{role:'img','aria-label':(metricNames[base.dimension]||base.title)+' by submission round'});panel.append(svg);host.append(panel);
       const width=Math.max(250,panel.clientWidth-28),height=window.innerWidth<520?265:window.innerWidth<1050?300:285;
-      const left=47,right=width-16,top=12,bottom=height-43,last=Math.max(...data.steps,1);
+      const left=64,right=width-16,top=12,bottom=height-43,last=Math.max(...data.steps,1);
       svg.setAttribute('viewBox','0 0 '+width+' '+height);
       const axis=scoreAxis(base.dimension,chart);
       svg.setAttribute('data-y-min',axis.min);svg.setAttribute('data-y-max',axis.max);
