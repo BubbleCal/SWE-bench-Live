@@ -67,9 +67,19 @@ def sample(workspace, binary):
 
 
 def future(workspace, spec):
-    install(workspace, spec, "future")
-    result = workspace.command(f"cargo test --locked --profile release-with-debug -p {spec['crate']} "
-                               "--test metabench_future -- --test-threads=1", 900)
+    if spec.get("future_patch"):
+        applied = workspace.command("git apply --whitespace=nowarn -", 60, spec["future_patch"])
+        if applied["returncode"]:
+            return {"status": "text_conflict_needs_review", "score": None, "patch_execution": applied}
+    if spec.get("future_append"):
+        from .verification import install_in_workspace
+        install_in_workspace(workspace, spec["future_append"])
+    if spec.get("future_lib_filters"):
+        selection = "--lib -- " + " ".join(spec["future_lib_filters"]) + " --test-threads=1"
+    else:
+        install(workspace, spec, "future")
+        selection = "--test metabench_future -- --test-threads=1"
+    result = workspace.command(f"cargo test --locked --profile release-with-debug -p {spec['crate']} " + selection, 900)
     match = re.search(r"test result: (ok|FAILED)\. (\d+) passed; (\d+) failed; (\d+) ignored;", result["output"])
     passed, failed, ignored = (map(int, match.groups()[1:]) if match else (0, 0, 0))
     valid = (match is not None and passed + failed == spec["future_test_count"] and ignored == 0
@@ -114,6 +124,12 @@ def evaluate(root, request, candidate, functional):
         evidence["reference_future"] = future(reference, spec)
         if evidence["reference_future"]["status"] != "passed":
             raise RuntimeError("historical reference fails frozen compatibility control")
+        # Historical compatibility patches must never contaminate the timed
+        # reference build. Restore the task's own revision before measuring it.
+        if spec.get("future_patch") or spec.get("future_append"):
+            if reference.restore_source_ownership()["returncode"]:
+                raise RuntimeError("reference ownership recovery failed")
+            reference.prepare([request["task"]["patch"]])
         refbin, evidence["reference_build"] = build(reference, spec)
         if not refbin:
             raise RuntimeError("historical reference performance build failed")

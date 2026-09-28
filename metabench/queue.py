@@ -22,6 +22,9 @@ class TestQueue:
                 );
                 CREATE INDEX IF NOT EXISTS pending_vm ON jobs(vm_id,status,created);
             """)
+            if "resource_started" not in {row[1] for row in db.execute("PRAGMA table_info(jobs)")}:
+                db.execute("ALTER TABLE jobs ADD COLUMN resource_started REAL")
+            db.execute("CREATE INDEX IF NOT EXISTS trial_timing ON jobs(trial_id,kind,created)")
 
     @contextmanager
     def connect(self):
@@ -72,6 +75,38 @@ class TestQueue:
                                  (time.time(), json.dumps(result, allow_nan=False), identity, owner)).rowcount
             if changed != 1:
                 raise ValueError("only the current job owner can complete it")
+
+    def resource_started(self, identity, timestamp, *, owner):
+        """Record when the VM acquired its execution lock, in controller time."""
+        with self.connect() as db:
+            db.execute("UPDATE jobs SET resource_started=MAX(started,MIN(?,?)) "
+                       "WHERE id=? AND status='running' AND owner=? AND resource_started IS NULL",
+                       (timestamp, time.time(), identity, owner))
+
+    def queued_seconds(self, trial, start, end):
+        """Union public-test waits clipped to this turn; never count hidden jobs.
+
+        Dispatch and remote lock acquisition are infrastructure wait too. A job
+        from an interrupted turn only contributes its overlap with this turn.
+        Concurrent waits are counted once, not added as extra free time.
+        """
+        with self.connect() as db:
+            rows = db.execute("SELECT created,resource_started,started,finished,status FROM jobs "
+                              "WHERE trial_id=? AND kind='public' AND created<? "
+                              "AND (resource_started IS NULL OR resource_started>?)",
+                              (trial, end, start)).fetchall()
+        total, previous = 0.0, start
+        intervals = []
+        for row in rows:
+            ready = row["resource_started"]
+            if ready is None and row["status"] == "completed":
+                ready = row["started"]  # Completed receipts from older protocols.
+            intervals.append((max(start, row["created"]), min(end, ready if ready is not None else end)))
+        for left, right in sorted(intervals):
+            if right > max(left, previous):
+                total += right - max(left, previous)
+                previous = right
+        return total
 
     def get(self, identity):
         with self.connect() as db:

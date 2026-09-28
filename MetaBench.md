@@ -29,8 +29,9 @@ assertion. It is a reviewed historical pilot, not a representative Lance benchma
 
 Future-requirement replay, subjective code review scores, automatic task-family sampling,
 confidence intervals, model rankings, and token/cost enforcement are not implemented yet.
-No placeholder score is assigned to an unsupported dimension. The native runner defaults to at most **4 user-level conversation rounds**, with a **900-second (15-minute) wall-clock budget per round**. Set `max_rounds` and `round_timeout_seconds` in the matrix to override these defaults; explicit `null` disables the deadline. The resolved defaults are frozen in the run manifest. CLI tool iteration and context management remain native. Queue wait and VM
-execution times are recorded separately; token counters remain observations.
+No placeholder score is assigned to an unsupported dimension. The native runner defaults to at most **4 user-level conversation rounds**, with a **900-second (15-minute) active budget per round**. Active time is turn wall time minus the union of this trial's public-test queue, dispatch and VM-lock waits. Reasoning, editing, compilation and test execution consume the budget. Overlapping waits are deducted once and clipped at round boundaries; hidden grading never directly grants extra budget. Set `max_rounds` and `round_timeout_seconds` to override these defaults; explicit `null` disables the deadline. `budget_mode: "wall"` is an explicitly separate protocol. The resolved defaults are frozen in the run manifest. CLI tool iteration and context management remain native.
+
+Each turn and checkpoint records `active_seconds`, `queue_wait_seconds`, and `wall_seconds`; checkpoint values are cumulative for that trial. The dashboard shows mean cumulative times per trial, not campaign elapsed time. Token counters remain observations. The separate `queue_timeout_seconds` infrastructure watchdog defaults to 7200 seconds per round: exceeding it is an infrastructure error, never model failure. It can be explicitly set to `null`. VM acquisition is reported live and mapped from remote elapsed duration to controller time, so VM lock contention is excluded before the command finishes.
 
 ## Setup
 
@@ -267,7 +268,7 @@ Unchanged patch hashes share the same durable job, but a previously perfect scor
 skips verification of a changed patch. On resume, ungraded saved checkpoints are queued
 again with the same job identity. The run manifest records `checkpoint-pipeline-v1` as
 its evaluation schedule. Grading competes with public tests in the same FIFO queue;
-those waits count toward the native round's wall-clock budget.
+those waits increase recorded wall time but do not consume the active answer budget.
 
 Tasks whose hidden tests live in the same files the agent edits can freeze a
 `verification_append` mapping from source path to `{ "source": "...", "namespace": "..." }`
@@ -279,6 +280,10 @@ signatures are not public compatibility contracts.
 
 Rust pilot tasks may also freeze a `supplemental` object containing `crate`,
 `benchmark_source`, `future_source`, `future_test_count`, `repeats`, and `tolerance`.
+Historical replay can additionally freeze `future_patch`, `future_append` sibling
+modules and `future_lib_filters`. Text conflicts remain unscored for review, not
+compatibility failures. Reference source is restored after replay before timing,
+so future changes cannot alter the performance baseline.
 The verifier runs these private sources in its own container, alongside a separate
 persistent historical-reference container. Each checkpoint job covers functional checks,
 paired performance measurements and downstream compatibility tests under one VM lock.

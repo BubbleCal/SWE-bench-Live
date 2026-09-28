@@ -157,6 +157,8 @@
   function table(){
     $('round-value').textContent=round;const head=$('table-head');head.replaceChildren(text('th','Model / effort'));
     for(const c of data.charts)head.append(text('th',metricNames[c.dimension]||c.title));head.append(text('th','Cumulative tokens'));
+    const hasTiming=data.rows.some(r=>r.budget_mode==='active');
+    if(hasTiming)for(const title of ['Active / task','Queue / task','Wall / task'])head.append(text('th',title));
     $('table-body').replaceChildren();
     for(const s of data.series.filter(s=>selected.has(s.config_id))){
       const row=document.createElement('tr');row.dataset.series=s.config_id;row.append(text('td',s.label,'model-cell'));
@@ -168,6 +170,11 @@
       const expectedRepeats=new Set(data.rows.filter(r=>r.config_id===s.config_id&&(!selectedTask||r.task_id===selectedTask)).map(r=>r.task_id+':'+(r.repeat||0)));
       const observedRepeats=new Set(rs.map(r=>r.task_id+':'+(r.repeat||0)));
       unknown ||= tasks.size<(selectedTask?1:data.tasks.length)||observedRepeats.size<expectedRepeats.size;const cell=text('td',!total&&unknown?'Pending':(unknown?'≥ ':'')+integer(total));cell.append(text('small',tasks.size+'/'+(selectedTask?1:data.tasks.length)+' tasks · current checkpoint'));row.append(cell);$('table-body').append(row);
+      if(hasTiming)for(const field of ['active_seconds','queue_wait_seconds','wall_seconds']){
+        const values=rs.map(r=>r[field]);const complete=values.length>0&&values.every(Number.isFinite)&&observedRepeats.size===expectedRepeats.size;
+        const timeCell=text('td',complete?(values.reduce((a,b)=>a+b,0)/values.length/60).toFixed(1)+' min':'Pending');
+        timeCell.append(text('small','Mean cumulative per trial'));row.append(timeCell);
+      }
     }
   }
   async function refresh(){

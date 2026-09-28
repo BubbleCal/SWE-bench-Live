@@ -24,7 +24,7 @@ from .schema import digest, public_task, write_json
 from .test_service import TestService
 from .vm_pool import SSHVM, VMPool
 
-PROTOCOL = "native-cli-v1"
+PROTOCOL = "native-cli-v2-active-budget"
 CONTINUE = "Review your current solution against the original requirements. Use public tests to check it, improve it if needed, and finish this turn."
 
 
@@ -40,14 +40,18 @@ def run_matrix(suite, repo, environments, matrix, out, *, vm_count=None, paralle
     agents, vms = matrix["agents"], matrix["vms"]
     if not isinstance(agents, list) or not isinstance(vms, list):
         raise ValueError("agents and vms must be lists")
-    matrix = {"max_rounds": 4, "round_timeout_seconds": 900, **matrix}
+    matrix = {"max_rounds": 4, "round_timeout_seconds": 900, "budget_mode": "active",
+              "queue_timeout_seconds": 7200, **matrix}
+    if matrix["budget_mode"] not in ("active", "wall"):
+        raise ValueError("budget_mode must be active or wall")
+    protocol = PROTOCOL if matrix["budget_mode"] == "active" else "native-cli-v2-wall-budget"
     rounds = matrix["max_rounds"]
     repeats = matrix.get("repeats", 1)
     count = vm_count if vm_count is not None else matrix.get("vm_count", len(vms))
     if not agents or not isinstance(rounds, int) or isinstance(rounds, bool) or rounds < 1 or not isinstance(repeats, int) or repeats < 1:
         raise ValueError("agents, max_rounds and repeats must be nonempty/positive")
     workers = parallel if parallel is not None else matrix.get("parallel_agents", len(agents) * len(suite["tasks"]) * repeats)
-    for name in ("round_timeout_seconds", "test_timeout_seconds"):
+    for name in ("round_timeout_seconds", "test_timeout_seconds", "queue_timeout_seconds"):
         value = matrix.get(name)
         if name == "test_timeout_seconds" and name in matrix and value is None:
             raise ValueError("test_timeout_seconds must be a positive duration")
@@ -69,9 +73,10 @@ def run_matrix(suite, repo, environments, matrix, out, *, vm_count=None, paralle
         key = json.dumps(spec.get("command", [spec["provider"]]))
         if key not in identities:
             identities[key] = cli_identity(spec)
-    configuration = {"protocol": PROTOCOL, "suite_id": suite["suite_id"], "matrix": matrix,
+    configuration = {"protocol": protocol, "suite_id": suite["suite_id"], "matrix": matrix,
                      "vm_count": count, "parallel_agents": workers, "environments": environments,
                      "native_cli": identities, "evaluation_schedule": "checkpoint-pipeline-v1",
+                     "trial_order": "task-then-configuration",
                      "execution_source_hash": digest({name: Path(__file__).with_name(name).read_text() for name in (
                          "native_run.py", "native_cli.py", "checkouts.py", "queue.py", "test_service.py", "test_mcp.py",
                          "vm_pool.py", "vm_worker.py", "checkpoint_eval.py", "verification.py", "evaluate.py", "process.py", "usage.py", "schema.py")})}
@@ -103,15 +108,15 @@ def run_matrix(suite, repo, environments, matrix, out, *, vm_count=None, paralle
         stop = threading.Event()
         row_lock = threading.Lock()
         jobs, rows = [], {}
-        for spec in agents:
-            config_id = digest({"experiment": experiment, "agent": spec})
-            for task in suite["tasks"]:
+        for task in suite["tasks"]:
+            for spec in agents:
+                config_id = digest({"experiment": experiment, "agent": spec})
                 for repeat in range(repeats):
                     identity = trial_id({"experiment": experiment, "run_id": manifest["run_id"], "agent": spec}, task, repeat)
                     vm = vms[len(jobs) % count]["id"]
                     label = re.sub(r"[^a-zA-Z0-9_.-]", "-", f"{spec['model']}-{spec['reasoning']}-{task['instance_id']}")[:100]
                     folder = out / "trials" / (label + "-" + identity[:8])
-                    common = {"suite_id": suite["suite_id"], "protocol_id": PROTOCOL, "config_id": config_id,
+                    common = {"suite_id": suite["suite_id"], "protocol_id": protocol, "config_id": config_id,
                               "model": spec["model"], "reasoning": spec["reasoning"], "provider": spec["provider"],
                               "task_id": task["instance_id"], "repeat": repeat, "trial_id": identity, "vm_id": vm,
                               "artifact_directory": str(folder), "score_dimensions":
@@ -207,6 +212,7 @@ def run_matrix(suite, repo, environments, matrix, out, *, vm_count=None, paralle
             cumulative = usage.empty()
             observed = {k: 0 for k in usage.FIELDS if k != "cost_usd"}
             seconds = 0.0
+            active_seconds = queue_seconds = 0.0
             def submit_grade(row):
                 # The payload owns an immutable patch string. Grading never reads
                 # the live checkout that the next native turn is already editing.
@@ -225,6 +231,8 @@ def run_matrix(suite, repo, environments, matrix, out, *, vm_count=None, paralle
                 if checkpoint.exists():
                     row = json.loads(checkpoint.read_text())
                     session, cumulative, seconds = row.get("session_id"), row["usage"], row["seconds"]
+                    active_seconds = row.get("active_seconds", seconds)
+                    queue_seconds = row.get("queue_wait_seconds", 0.0)
                     previous_usage = row.get("native_turn", {}).get("provider", {}).get("session_usage")
                     observed = {k: row.get("observed_usage_lower_bound", {}).get(k, row["usage"].get(k) or 0) for k in observed}
                     submit_grade(row)
@@ -237,14 +245,20 @@ def run_matrix(suite, repo, environments, matrix, out, *, vm_count=None, paralle
                           "The test VM has its own persistent build cache. Hidden scoring is not feedback.\n"
                           "Test VM context (not the local working directory):\n" + env.get("agent_instructions", "")) if step == 1 else CONTINUE
                 limit = matrix["round_timeout_seconds"]
+                budget_text = ("active budget, excluding public-test queue and VM-lock waits; "
+                               "reasoning, editing and actual test execution count toward the budget. "
+                               if matrix["budget_mode"] == "active" else "wall-clock budget, including VM queue waits. ")
                 prompt += (f"\nConversation round {step}/{rounds}. "
-                           + (f"This round has a {limit:g}-second wall-clock budget, including VM queue waits. " if limit is not None else "")
+                           + (f"This round has a {limit:g}-second " + budget_text if limit is not None else "")
                            + f"A public test command may request at most {matrix.get('test_timeout_seconds', 1800):g} seconds of VM execution.")
                 turn_dir = folder / f"turn-{step}"
                 if turn_dir.exists():
                     raise RuntimeError(f"{identity} turn {step} was interrupted before its checkpoint; inspect saved events before retrying")
                 turn = agent_runner(spec, checkout.root, prompt, turn_dir, session_id=session, mcp_path=mcp_path,
-                                    timeout=matrix.get("round_timeout_seconds"), stop=stop, previous_usage=previous_usage)
+                                    timeout=matrix.get("round_timeout_seconds"), stop=stop, previous_usage=previous_usage,
+                                    queue_wait=(lambda start, end: queue.queued_seconds(identity, start, end))
+                                    if matrix["budget_mode"] == "active" else None,
+                                    queue_timeout=matrix["queue_timeout_seconds"] if matrix["budget_mode"] == "active" else None)
                 session = turn.get("session_id")
                 previous_usage = turn.get("provider", {}).get("session_usage")
                 cumulative = usage.add(cumulative, turn["usage"])
@@ -254,10 +268,14 @@ def run_matrix(suite, repo, environments, matrix, out, *, vm_count=None, paralle
                 else:
                     observed = {k: observed[k] + (known.get(k) or 0) for k in observed}
                 seconds += turn["seconds"]
+                active_seconds += turn.get("active_seconds", turn["seconds"])
+                queue_seconds += turn.get("queue_wait_seconds", 0.0)
                 patch = service.snapshot(identity)
                 (folder / f"step-{step}.patch").write_text(patch)
                 row = {**common, "step": step, "session_id": session, "status": turn["status"],
                        "usage": dict(cumulative), "step_usage": turn["usage"], "seconds": seconds,
+                       "wall_seconds": seconds, "active_seconds": active_seconds,
+                       "queue_wait_seconds": queue_seconds, "budget_mode": matrix["budget_mode"],
                        "native_turn": turn, "patch_hash": digest(patch), "score": None, "scores": {},
                        "observed_usage_lower_bound": {**observed, "total_tokens": observed["input_tokens"] + observed["output_tokens"]},
                        "score_eligible": False, "agent_steps": step}

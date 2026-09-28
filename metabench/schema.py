@@ -85,6 +85,13 @@ def validate_task(task):
         for key in ("benchmark_source", "future_source"):
             if not isinstance(supplemental.get(key), str) or not supplemental[key].strip():
                 raise ValueError("supplemental evaluation requires frozen Rust sources")
+        validate_append(supplemental.get("future_append", {}))
+        if not isinstance(supplemental.get("future_patch", ""), str):
+            raise ValueError("future_patch must be a frozen patch string")
+        filters = supplemental.get("future_lib_filters")
+        if filters is not None and (not isinstance(filters, list) or not filters or any(
+                not isinstance(f, str) or not re.fullmatch(r"[a-zA-Z0-9_:]+", f) for f in filters)):
+            raise ValueError("future_lib_filters must be test-name prefixes")
         for key in ("repeats", "future_test_count"):
             if type(supplemental.get(key)) is not int or supplemental[key] < 1:
                 raise ValueError("supplemental counts must be positive integers")

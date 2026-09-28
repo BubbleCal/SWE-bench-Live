@@ -14,6 +14,7 @@ from .schema import write_json
 
 
 class SSHVM:
+    resource_timing = True
     def __init__(self, specification, control_directory):
         self.spec = specification
         self.id = specification["id"]
@@ -87,15 +88,17 @@ class SSHVM:
 
     def status(self, identity):
         directory = self.root / "queue" / identity
-        script = '''import json,sys
+        script = '''import json,sys,time
 from pathlib import Path
 p=Path(sys.argv[1]);result=p/'result.json'
-if result.exists(): print(json.dumps({'state':'completed','result':json.loads(result.read_text())}))
+ready=p/'running.json'
+timing={'observed_at':time.time(),'execution_started_at':json.loads(ready.read_text())['started_at'] if ready.exists() else None}
+if result.exists(): print(json.dumps({'state':'completed','result':json.loads(result.read_text()),**timing}))
 elif (p/'pid').exists():
  pid=(p/'pid').read_text().strip();cmd=Path('/proc')/pid/'cmdline'
  alive=cmd.exists() and str(p).encode() in cmd.read_bytes()
- if not alive and result.exists(): print(json.dumps({'state':'completed','result':json.loads(result.read_text())}))
- else: print(json.dumps({'state':'running' if alive else 'interrupted'}))
+ if not alive and result.exists(): print(json.dumps({'state':'completed','result':json.loads(result.read_text()),**timing}))
+ else: print(json.dumps({'state':'running' if alive else 'interrupted',**timing}))
 else: print(json.dumps({'state':'not_started'}))
 '''
         return json.loads(self.python(script, directory))
@@ -123,7 +126,7 @@ else: print(json.dumps({'state':'not_started'}))
         # $! belongs to this exact launch; it is never inferred from a process name.
         self.remote(command + " echo $! >" + shlex.quote(str(directory / "pid")))
 
-    def wait(self, identity, stop):
+    def wait(self, identity, stop, on_started=None):
         errors = 0
         while not stop.is_set():
             try:
@@ -135,6 +138,11 @@ else: print(json.dumps({'state':'not_started'}))
                     raise RuntimeError("VM connection lost; remote job and lock are retained for reconciliation")
                 stop.wait(2)
                 continue
+            if on_started and status.get("execution_started_at") is not None:
+                # Convert a remote duration, not its epoch, to controller time.
+                elapsed = max(0, status["observed_at"] - status["execution_started_at"])
+                on_started(time.time() - elapsed)
+                on_started = None
             if status["state"] == "completed":
                 return status["result"]
             if status["state"] != "running":
@@ -179,12 +187,18 @@ class VMPool:
 
     def _worker(self, name):
         driver = self.drivers[name]
+        def wait(job):
+            if getattr(driver, "resource_timing", False):
+                return driver.wait(job["id"], self.stop, on_started=lambda timestamp:
+                    self.queue.resource_started(job["id"], timestamp, owner=job["owner"]))
+            self.queue.resource_started(job["id"], job["started"], owner=job["owner"])
+            return driver.wait(job["id"], self.stop)
         try:
             # Reconcile a crashed local controller before claiming more work.
             for job in self.queue.running():
                 if job["vm_id"] == name:
                     driver.launch(job)
-                    result = driver.wait(job["id"], self.stop)
+                    result = wait(job)
                     self.queue.finish(job["id"], result, owner=job["owner"])
             while not self.stop.is_set():
                 job = self.queue.claim(name, self.owner)
@@ -192,7 +206,7 @@ class VMPool:
                     self.stop.wait(.1)
                     continue
                 driver.launch(job)
-                result = driver.wait(job["id"], self.stop)
+                result = wait(job)
                 self.queue.finish(job["id"], result, owner=self.owner)
         except Exception as error:
             # Do not reclaim/expire an uncertain VM job. Other VMs can continue.

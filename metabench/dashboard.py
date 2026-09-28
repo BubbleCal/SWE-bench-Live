@@ -22,7 +22,8 @@ def dashboard_data(rows, metadata=None):
     }
     # Keep tool transcripts, patches, local paths and provider receipts out of the page.
     fields = ("config_id", "task_id", "step", "repeat", "status", "score_eligible",
-              "scores", "usage", "observed_usage_lower_bound")
+              "scores", "usage", "observed_usage_lower_bound", "budget_mode",
+              "wall_seconds", "active_seconds", "queue_wait_seconds")
     data["rows"] = [{key: r[key] for key in fields if key in r} for r in rows]
     data["metadata"] = metadata or {}
     serialized = json.dumps(data, sort_keys=True, allow_nan=False)

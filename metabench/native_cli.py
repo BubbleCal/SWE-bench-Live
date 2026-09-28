@@ -152,15 +152,23 @@ def command(spec, session_id, mcp_path):
     raise ValueError("provider must be codex or claude")
 
 
-def run_turn(spec, root, prompt, out, *, session_id=None, mcp_path, timeout=None, stop=None, previous_usage=None):
+def run_turn(spec, root, prompt, out, *, session_id=None, mcp_path, timeout=None, stop=None,
+             previous_usage=None, queue_wait=None, queue_timeout=None):
     out = Path(out)
     out.mkdir(parents=True, exist_ok=False)
     argv = command(spec, session_id, mcp_path)
     write_json(out / "invocation.json", {"argv": argv, "cwd": str(root), "session_id": session_id})
     (out / "prompt.txt").write_text(prompt)
     started = time.monotonic()
+    started_at = time.time()
     timed_out = False
     interrupted = False
+    infrastructure_error = None
+    clock = {"wall_seconds": 0.0, "queue_wait_seconds": 0.0, "active_seconds": 0.0}
+    def timing():
+        wall = time.monotonic() - started
+        waiting = min(wall, max(0, queue_wait(started_at, started_at + wall))) if queue_wait else 0.0
+        return {"wall_seconds": wall, "queue_wait_seconds": waiting, "active_seconds": wall - waiting}
     environment = {k: v for k, v in os.environ.items() if not k.startswith("CODEX_") or k == "CODEX_HOME"}
     if spec["provider"] == "claude":
         environment["CLAUDE_CODE_EFFORT_LEVEL"] = spec["reasoning"]
@@ -173,15 +181,19 @@ def run_turn(spec, root, prompt, out, *, session_id=None, mcp_path, timeout=None
             while process.poll() is None:
                 if stop is not None and stop.is_set():
                     raise KeyboardInterrupt
-                if timeout is not None and time.monotonic() - started >= timeout:
+                clock = timing()
+                if queue_timeout is not None and clock["queue_wait_seconds"] >= queue_timeout:
+                    raise RuntimeError("public test infrastructure wait limit exceeded")
+                if timeout is not None and clock["active_seconds"] >= timeout:
                     raise subprocess.TimeoutExpired(argv, timeout)
                 try:
                     process.wait(timeout=.2)
                 except subprocess.TimeoutExpired:
                     pass
-        except (subprocess.TimeoutExpired, KeyboardInterrupt) as error:
+        except (Exception, KeyboardInterrupt) as error:
             interrupted = isinstance(error, KeyboardInterrupt)
-            timed_out = not interrupted
+            timed_out = isinstance(error, subprocess.TimeoutExpired)
+            infrastructure_error = str(error) if not interrupted and not timed_out else None
             process.send_signal(signal.SIGINT)
             try:
                 process.wait(timeout=10)
@@ -199,10 +211,22 @@ def run_turn(spec, root, prompt, out, *, session_id=None, mcp_path, timeout=None
     except ValueError as error:
         result = {"session_id": session_id, "usage": usage.normalize({}), "status": "agent_error",
                   "provider": {"provider": spec["provider"], "validation_error": str(error)}}
-    result.update(seconds=time.monotonic()-started, returncode=process.returncode,
+    try:
+        measured = timing()
+    except Exception as error:
+        # Never leave a paid native process running when the timing store fails.
+        # Preserve the last observed wait rather than inventing an eligible score.
+        wall = time.monotonic() - started
+        measured = {"wall_seconds": wall, "queue_wait_seconds": clock["queue_wait_seconds"],
+                    "active_seconds": wall - clock["queue_wait_seconds"]}
+        infrastructure_error = str(error)
+    result.update(seconds=measured["wall_seconds"], **measured, started_at=started_at,
+                  budget_mode="active" if queue_wait else "wall", returncode=process.returncode,
                   native_event_log=str(out / "events.jsonl"))
     result["provider"]["requested_reasoning"] = spec["reasoning"]
-    if timed_out:
+    if infrastructure_error:
+        result.update(status="infrastructure_error", error=infrastructure_error)
+    elif timed_out:
         result["status"] = "round_timeout"
     elif interrupted:
         result["status"] = "interrupted"

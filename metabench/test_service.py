@@ -103,8 +103,12 @@ class TestService:
                 if job["trial_id"] != trial["id"] or job["kind"] != "public":
                     self.send(403, {"error": "job is not this trial's public test"})
                     return
+                ready = job["resource_started"]
+                if ready is None and job["status"] == "completed":
+                    ready = job["started"]
                 value = {"job_id": job["id"], "status": job["status"],
-                         "queue_wait_seconds": (job["started"] or time.time()) - job["created"]}
+                         "queue_wait_seconds": (ready or time.time()) - job["created"],
+                         "fifo_queue_wait_seconds": (job["started"] or time.time()) - job["created"]}
                 if job["result"] is not None:
                     result = job["result"]
                     value["result"] = {k: result[k] for k in ("execution", "status", "error", "vm_started_at", "vm_finished_at") if k in result}

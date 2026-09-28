@@ -34,6 +34,17 @@ class CheckpointEvaluationTest(unittest.TestCase):
         self.assertEqual(result["score"], 50)
         self.assertEqual(result["status"], "behavior_failed")
 
+    def test_future_patch_conflict_is_not_a_candidate_behavior_failure(self):
+        class Workspace:
+            def command(self, command, timeout, source=None):
+                self.last = command
+                return {"returncode": 1, "output": "patch does not apply"}
+        workspace = Workspace()
+        result = future(workspace, {"future_patch": "frozen historical patch"})
+        self.assertEqual(result["status"], "text_conflict_needs_review")
+        self.assertIsNone(result["score"])
+        self.assertNotIn('--index', workspace.last)
+
 
 if __name__ == "__main__":
     unittest.main()
