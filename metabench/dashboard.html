@@ -173,7 +173,12 @@
   async function refresh(){
     if(!boot.live||busy)return;busy=true;
     try{const response=await fetch('/data.json',{cache:'no-store',signal:AbortSignal.timeout(10000)});if(!response.ok)throw Error('Data refresh failed');const next=await response.json();if(next.suite_id!==data.suite_id)throw Error('Suite changed');
-      if(next.version!==data.version){const old=new Set(data.series.map(s=>s.config_id));for(const s of next.series)if(!old.has(s.config_id))selected.add(s.config_id);data=next;configure();draw();}$('error').hidden=true;renderStatus();
+      if(next.version!==data.version){
+        const signature=value=>{const copy={...value,metadata:{...value.metadata}};delete copy.version;delete copy.generated_at;delete copy.metadata.updated_at;return JSON.stringify(copy);};
+        const changed=signature(next)!==signature(data),old=new Set(data.series.map(s=>s.config_id));
+        for(const s of next.series)if(!old.has(s.config_id))selected.add(s.config_id);
+        data=next;if(changed){configure();draw();}
+      }$('error').hidden=true;renderStatus();
     }catch{renderStatus(true);$('error').textContent='Could not refresh. The last valid results remain visible; automatic retry continues.';$('error').hidden=false;}finally{busy=false;}
   }
   $('task').addEventListener('change',()=>{selectedTask=$('task').value;save();draw();});
