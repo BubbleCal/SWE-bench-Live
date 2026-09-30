@@ -7,7 +7,10 @@ from .schema import read_json, write_json, freeze, load_suite
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Build and run repository-specific SWE-bench-Live evaluations")
+    if sys.argv[1:2] == ["upstream"]:
+        from .upstream import main as upstream_main
+        return upstream_main(sys.argv[2:])
+    parser = argparse.ArgumentParser(description="Build and run repository-specific coding-agent benchmarks")
     sub = parser.add_subparsers(dest="operation", required=True)
     mine = sub.add_parser("mine", help="use a curation agent to turn local Git history into candidate tasks")
     mine.add_argument("--repo", required=True)
@@ -51,6 +54,7 @@ def main():
     live.add_argument("--task", type=Path, required=True)
     live.add_argument("--status", type=Path, required=True)
     live.add_argument("--out", type=Path, required=True)
+    sub.add_parser("upstream", help="use the pinned SWE-bench-Live dependency; see upstream --help")
     args = parser.parse_args()
     try:
         if args.operation == "mine":

@@ -1,0 +1,10 @@
+{
+  "repository": "https://github.com/microsoft/SWE-bench-Live.git",
+  "revision": "62d02936a0726fbf4597b05bd07b09fb99eddae6",
+  "path": "dependencies/swe-bench-live",
+  "repolaunch": {
+    "repository": "https://github.com/microsoft/RepoLaunch.git",
+    "revision": "c4b623d930f3728e5338664bb634021b98492cbf",
+    "path": "launch"
+  }
+}

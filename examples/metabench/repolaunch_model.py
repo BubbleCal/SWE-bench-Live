@@ -1,6 +1,6 @@
-"""JSON model adapter using the fork's existing RepoLaunch provider dependencies.
+"""Legacy JSON model adapter using the optional curation provider dependency.
 
-Install launch/ as described in Development.md. Configure provider credentials in the
+Install meta-bench[curation]. Configure provider credentials in the
 adapter's environment; credentials are not passed to task containers. No default model
 or reasoning setting is chosen here.
 """
@@ -8,9 +8,6 @@ or reasoning setting is chosen here.
 import contextlib
 import json
 import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "launch"))
 
 
 def main():
@@ -21,7 +18,7 @@ def main():
         options = {"model": request["model"]}
         if request["reasoning"] != "default":
             options["reasoning_effort"] = request["reasoning"]
-        # Use RepoLaunch's existing provider dependency directly: its LLMProvider
+        # Use the provider directly: RepoLaunch's LLMProvider
         # preflight sends a separate hello call whose usage is not attributed.
         response = litellm.completion(messages=request["messages"], **options)
     text = response.choices[0].message.content.strip()

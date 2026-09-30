@@ -1,247 +1,42 @@
-# Data Curation of SWE-bench-Live
+# Development
 
-This tutorial walks you through how to automatically curate new issue-resolving tasks from real GitHub issues.
+Use the project-local `.venv` (plain venv/pip). Do not install dependencies globally.
 
-## Setup
-
-Dependencies: python, git, docker
-
-The docker dependency means running on containerized cluster pods is **NOT** feasible. Usually running one instances takes 4 GPUs with 16GB RAM, and the large repos like ClickHouse takes even 10 CPUs and 64GB RAM... The disk I/O rate is also critical for docker commit operations, so SSD (>= 1TB) disk is always preferred. In a word, **the performance of your machine directly determines the success rate of task creation**.
-
-```shell
-docker ps # make sure docker is running and you have privilage
-git clone --recursive https://github.com/microsoft/SWE-bench-Live
-pip install -e .
-pip install -e launch/.
-```
-To set up RepoLaunch on Windows container there are some special tips at [Development-Windows.md](https://github.com/microsoft/RepoLaunch/blob/main/docs/Development-Windows.md)
-
-## Repositories Crawling
-
-This step crawls the initial source repo list, from which we find issues. You should prepare GitHub tokens in `tokens.txt` in advance to unlock the API rate limit -- collect at least three tokens from different GitHub accounts.
-
-1. Crawl raw repositories within a given star range, supporting multiple tokens for higher rate limits
-
-```shell
-cd curation
-mkdir -p output
-
-# max_stars is optional
-python crawl_repo.py \
-    --language Python \
-    --min_stars 10000 \
-    --max_stars 100000 \
-    --tokens_file tokens.txt \
-    --output_file output/raw_repos.jsonl
+```sh
+python3 -m venv .venv
+.venv/bin/python -m pip install -e '.[reports]'
+.venv/bin/python -m unittest discover -s tests -v
+.venv/bin/metabench --help
 ```
 
-2. Filter the crawled raw repositories based on some predefined quality control-related criteria.
+Core tests do not require SWE-bench-Live, model credentials or cloud VMs.
+Initialize source dependencies only when exercising the upstream adapter:
 
-```shell
-# More than 200 pulls and issues
-# More than 200 forks
-# The percentage of main language code should be more than 60%
-python filter_repo.py \
-    --input_file output/raw_repos.jsonl \
-    --output_file output/filtered_repos.jsonl \
-    --tokens_file tokens.txt \
-    --language Python \
-     --max_workers 20
+```sh
+git submodule update --init --recursive
+.venv/bin/metabench upstream doctor
+.venv/bin/python -m pip install -e '.[live]'
+.venv/bin/metabench upstream evaluate -- --help
+METABENCH_TEST_LIVE=1 .venv/bin/python -m unittest discover -s tests -p 'test_upstream_live.py' -v
 ```
 
-## Issue-PR Pairs Crawling
+The adapter tests exercise revision checks, isolation, argument/exit-code forwarding
+and caller-relative output paths with a local fixture. The `doctor` command checks
+the actual pinned source checkouts. Optional live tests collect saved fixture reports
+through the real evaluator/validator without Docker or model calls. Running upstream evaluation additionally needs
+Docker and the corresponding task images.
 
-This step crawls Issue-PR pairs created after the cut-off date from the given repositories, and converts them into SWE-bench-like task instances.
-
-```shell
-mkdir -p job_status
-
-./swe_task_crawling/run_get_tasks_pipeline.sh \
-    --repos-jsonl output/filtered_repos.jsonl \
-    --token-file tokens.txt \
-    --cutoff-date 20250501 \
-    --path-prs output/prs \
-    --path-tasks output/tasks \
-    --output-dir output/split_jobs
-
-
-python swe_task_crawling/merge_tasks.py \
-    --input_folder output/tasks \
-    --input_repos output/filtered_repos.jsonl \
-    --output output/raw_tasks.jsonl
+```sh
+docker build -t metabench-python -f examples/metabench/python.Dockerfile .
+METABENCH_TEST_IMAGE=$(docker image inspect metabench-python --format '{{.Id}}') \
+  .venv/bin/python -m unittest discover -s tests -p '*docker.py' -v
 ```
 
-## Simple Filtering based on LLM Judge
+Dependencies under `dependencies/` are external source, not our implementation.
+Never patch them for meta-bench behavior. Update their commits, packaged source lock,
+optional dependency metadata and validation together when upgrading.
+`metabench` is the only namespace in the built wheel. Archived benchmark artifacts
+under `.metabench/` retain their original code and protocol fingerprints.
 
-
-### Verify the quality of instances
-
-This step basically follows the idea of SWE-bench-Verified to filter instance with
-
-1. Vague problem statements;
-2. Test patches with requirements not required in problem statements;
-3. Answer in problem statement.
-
-Prepare your llm API Key.
-
-```shell
-export OPENAI_API_KEY=...
-
-python -m llm_filter.verify \
-    --input_dir output/raw_tasks.jsonl \
-    --output_dir  output/verified_tasks.jsonl \
-    --llm_provider  AOAI \
-    --model_name   gpt-5-20250807
-```
-
-### Split windows-specific tasks VS general tasks
-
-```shell
-python -m llm_filter.split_os \
-    --input_file output/raw_tasks.jsonl  \
-    --windows_file  output/windows_tasks.jsonl \
-    --general_file  output/general_tasks.jsonl \
-    --llm_provider  AOAI \
-    --model_name   gpt-5-20250807
-```
-
-We have created a script `curation/run.sh` that allows you to run all the above curation steps in one go. We recommend that you test each step manually using a small volume of data to ensure there are no bugs before running `run.sh` at scale.
-
-```bash
-cd curation
-nohup bash run.sh > log.out 2>&1 &
-```
-
-## Execution Environment Setup with `RepoLaunch`
-
-Next, we will use `RepoLaunch` to create an execution environment for each task instance to support test execution.
-
-Create a run config for RepoLaunch and save it in `launch/data/your_experiment/config.json`. The example config.json in `launch/data/examples` is:
-```json
-{
-    "mode": {
-        "setup": true,
-        "organize": true
-    },
-    "model_config": {
-        "model": "openai/gpt-5.4"
-    },
-    "workspace_root": "data/examples/",
-    "dataset": "data/examples/dataset.jsonl",
-    "print_to_console": false,
-    "first_N_repos": -1,
-    "overwrite": false,
-    "max_workers": 5,
-    "os": "linux",
-    "max_trials": 2,
-    "max_steps_setup": 60,
-    "max_steps_verify": 20,
-    "max_steps_organize": 40,
-    "cmd_timeout": 60,
-    "image_prefix": "repolaunch/dev"
-}
-```
-
-Set `cmd_timeout` to 60min for Linux and 90min for Windows. Each worker usually takes 4 CPUs and 16GB RAM, so determine `workers` based on the specifications of your machine.
-
-Prepare your LLM API key and TAVILY API key (for web search tool).
-
-```shell
-export OPENAI_API_KEY=... # for linux
-$env:OPENAI_API_KEY=... # for windows
-export TAVILY_API_KEY=... # for linux
-$env:TAVILY_API_KEY=... # for windows
-```
-
-Fire your RepoLaunch run!
-```shell
-cd ../launch
-
-# recommended in a tmux session, as repo build&test takes a very long time
-launch data/examples/config.json
-```
-
-Result is saved to `data/examples/organize.jsonl`.
-
-> [!NOTE]
-> If your `dataset.jsonl` contains multiple instances with different commits from the same repo, we provide a more efficient command than `launch data/examples/config.json`:
->
-> ```shell
-> export GITHUB_TOKEN=... # for linux
-> $env:GITHUB_TOKEN=...   # for windows
-> python -m launch.scripts.adjacent_commit_run --config-path data/examples/config.json
-> ```
->
-> This command only selects one commit for each repo to launch. After RepoLaunch completes that commit, other commits of the same repo in the dataset is git-checked out from the built image, and the RepoLaunch extracted commands and parsers are re-used. Only when direct checkout failed will the failed instances be launched by RepoLaunch. With GPT-5.6-Sol-Medium, this method achieves >=98% success with 82% savings on LM API cost and 78% savings on Docker image storage space when creating execution environments for 856 GitHub issues from 93 repos.
->
-> Result of this command is saved to `data/examples/result.jsonl` (not `organize.jsonl`).
-
-> [!NOTE]
-> Some instances would require many file descriptors. If you see "too many files open error", try
->
-> ```shell
-> ulimit -a
-> ulimit -n 32768
-> ```
-
-> [!NOTE]
-> We observe that as the execution becomes very long, the docker response (docker run container; docker commit and docker remove container) would become lower and lower and even return None.
-> In this case:
->
-> ```shell
-> stop running launch
-> docker ps -a
-> docker rm -f all stuck/dead containers
-> start running launch again
-> ```
-
-
-## Validation
-
-In this step we apply gold patches to instances, run test cases, and get `FAIL_TO_PASS` and `PASS_TO_PASS` test cases for each instance.
-
-```shell
-# cd in repo root
-cd ../
-
-# For Windows system if there are decoding issues: $env:PYTHONUTF8="1" ; $env:PYTHONIOENCODING="utf-8"
-
-# Get Fail to Pass
-# test is run 3 times automatically in validation.py to filter flaky (unstable) instances
-python -m  evaluation.validation \
-    --input_dir launch/data/examples/organize.jsonl \# or result.jsonl if you use adjacent_commit_run.py
-    --output_dir logs/val \
-    --platform  linux \#or windows
-    --workers  4 \
-    --overwrite  0 # or 1 for yes
-
-# some repos always have different test values / test names for each run; evaluation with the gold patches filters out these indeterminate instances.
-python -m  evaluation.evaluation \
-    --dataset logs/val/validated_instances.jsonl \
-    --output_dir logs/eval \
-    --patch_dir gold \
-    --platform  linux \#or windows
-    --workers  4 \
-    --overwrite  0 # or 1 for yes
-```
-
-Result is saved to `logs/eval/gold_patch_evaluated_instances.jsonl`.
-
-
-## For New Task Instance Contributors
-
-The demo to upload dataset to huggingface is 
-
-```bash
-cd curation
-hf auth login
-python push_dataset/push_multilang.py
-```
-
-The demo to upload docker image to dockerhub is 
-
-```bash
-cd launch
-docker login
-python -m launch.scripts.upload_docker --dataset ... --clear_after_push 0
-```
+The local Git history and remote retain the original fork for traceability. This
+migration does not create or publish a new GitHub repository.

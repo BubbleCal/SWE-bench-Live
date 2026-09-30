@@ -1,10 +1,11 @@
 # Repository meta-benchmark
 
-This fork adds a repository-specific evaluation workflow to SWE-bench-Live. It preserves
-the upstream curation, RepoLaunch environment construction, and evaluation commands.
+Meta-bench is an independent repository-specific evaluation project. SWE-bench-Live
+and its nested RepoLaunch runtime are pinned, unmodified source dependencies under
+`dependencies/`, used only through the optional `metabench.upstream` adapter.
 The native runner, VM queue, evaluator and interactive HTML report use the Python
 standard library. PNG/SVG exports use the optional `reports` extra (Matplotlib).
-The one-shot curation adapter can use RepoLaunch's existing LiteLLM dependency.
+The one-shot curation adapter uses the optional `curation` extra (LiteLLM).
 
 ## Scope of this version
 
@@ -42,18 +43,16 @@ Python 3.12+, Git, Docker and the pinned images. From the repository root:
 
 ```sh
 python3 -m venv .venv
-.venv/bin/python -m pip install 'matplotlib>=3.10,<4'
+.venv/bin/python -m pip install -e '.[reports]'
 .venv/bin/python -m metabench --help
 .venv/bin/python -m unittest discover -s tests -v
 ```
 
-The direct Matplotlib installation above is the lightweight reporting dependency declared
-in `pyproject.toml`'s `reports` extra. The existing upstream
-`.venv/bin/python -m pip install -e '.[reports]'` workflow also installs the `metabench`
-entry point and upstream dependencies. Curation and validation can run without Matplotlib;
-native `run` writes standalone HTML without needing Matplotlib. Install and authenticate
-the local Codex / Claude Code CLIs for live trials. The `launch` submodule and its
-provider dependencies are only needed by the optional curation adapter.
+The core and interactive HTML report use the standard library. The `reports` extra
+adds PNG/SVG exports. Install `.[curation]` for the one-shot LiteLLM adapter and
+`.[live]` plus `git submodule update --init --recursive` for upstream tools.
+Native Codex / Claude Code trials require neither upstream dependency nor LiteLLM.
+See [README.md](README.md#swe-bench-live-integration) for the dependency boundary.
 
 ## Prepare a task
 
@@ -74,10 +73,10 @@ the answer; the tested model never receives that payload.
 
 `mine` emits candidates, not validated tasks. It currently handles non-merge commits in
 a local revision range; PR/issue discovery and environment preparation remain available
-through upstream `curation/` and RepoLaunch. Review requirements and test coverage before
+through the pinned upstream dependency and RepoLaunch. Review requirements and test coverage before
 accepting generated tasks. Candidate difficulty is not inferred from patch size.
 The example `examples/metabench/repolaunch_curator.py --model PROVIDER/MODEL --reasoning SETTING`
-is a one-shot history-to-task adapter using the same existing provider dependency. A
+is a one-shot history-to-task adapter using the optional LiteLLM provider dependency. A
 repository-exploring agent can implement the same JSON contract.
 
 For the reviewed Lance pilot:
@@ -420,7 +419,8 @@ other files in the chart directory are preserved.
 
 ## Reuse upstream evaluation results
 
-Run upstream `evaluation.evaluation` as documented in [evaluation/README.md](evaluation/README.md).
+Run `metabench upstream evaluate -- ...` as documented in the
+[upstream evaluation guide](dependencies/swe-bench-live/evaluation/README.md).
 Then use the exact instance and its `status.json` for strict grading:
 
 ```sh

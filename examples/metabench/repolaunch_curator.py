@@ -1,4 +1,4 @@
-"""Curation adapter using the existing RepoLaunch LiteLLM dependency.
+"""Curation adapter using the optional meta-bench[curation] LiteLLM dependency.
 
 Usage in an adapter argv: python repolaunch_curator.py --model PROVIDER/MODEL --reasoning high
 Always review generated requirements and run metabench validate before freezing a task.
