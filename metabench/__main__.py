@@ -54,6 +54,9 @@ def main():
     live.add_argument("--task", type=Path, required=True)
     live.add_argument("--status", type=Path, required=True)
     live.add_argument("--out", type=Path, required=True)
+    rescore = sub.add_parser("rescore-performance", help="recompute performance from paired samples without model/VM calls")
+    rescore.add_argument("results", type=Path)
+    rescore.add_argument("--out", type=Path, required=True)
     sub.add_parser("upstream", help="use the pinned SWE-bench-Live dependency; see upstream --help")
     args = parser.parse_args()
     try:
@@ -95,6 +98,10 @@ def main():
         elif args.operation == "grade-live":
             from .evaluate import grade_live_status
             write_json(args.out, grade_live_status(read_json(args.task), read_json(args.status)))
+        elif args.operation == "rescore-performance":
+            from .performance import rescore_file
+            rows = rescore_file(args.results, args.out)
+            print(f"Rescored {len(rows)} checkpoints from existing timing samples.")
     except (ValueError, KeyError, OSError, RuntimeError) as error:
         parser.exit(2, f"metabench: {error}\n")
     return 0

@@ -289,6 +289,28 @@ The verifier runs these private sources in its own container, alongside a separa
 persistent historical-reference container. Each checkpoint job covers functional checks,
 paired performance measurements and downstream compatibility tests under one VM lock.
 The reference and candidate are timed alternately on CPU 2, excluding compilation.
+Performance scoring uses `relative-latency-v2`: for each workload, let `r` be the
+median of its paired reference/candidate latency ratios. Its score is
+`100 * r / (1 + r)`: parity is 50, 2x faster is 66.67, 2x slower is 33.33.
+Faster solutions continue to improve their score; 0 and 100 are limiting values.
+Workload scores are averaged within a task; tasks retain equal weight in reports.
+The frozen `tolerance` field is retained for historical task compatibility, but v2
+does not apply the old tolerance bonus. The scoring policy is recorded separately
+from the measurement protocol; reports reject mixed performance policies.
+
+Rescore archived paired timing samples without new agent calls or VM execution:
+
+```sh
+.venv/bin/metabench rescore-performance results.jsonl --out rescored.jsonl
+.venv/bin/metabench report rescored.jsonl --out report.html
+```
+
+The source file is never overwritten. Every migrated row preserves its previous
+scores and total, and a policy sidecar records the source checksum. Missing timing
+samples cannot be inferred from an old score. Raw timing values, functional gates,
+excluded cases, future compatibility, usage and trajectory identities are retained.
+The weighted total is recalculated; original run audits remain historical evidence.
+
 Scores use functional 60%, performance 20%, compatibility 20%; a critical functional
 failure gates the total to zero and excludes performance. Missing tests, failed reference
 controls and measurement/build failures remain reviewable rather than receiving invented

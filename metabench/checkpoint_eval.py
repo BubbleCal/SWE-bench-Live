@@ -10,6 +10,7 @@ import shlex
 import statistics
 
 from .schema import digest
+from .performance import metric_score, PERFORMANCE_POLICY_ID
 
 
 def checked(workspace, command, *, source=None, timeout=900):
@@ -91,6 +92,7 @@ def future(workspace, spec):
 
 
 def performance_scores(pairs, repeats, tolerance):
+    """Score median paired latency ratios; tolerance is a legacy, unused input."""
     if len(pairs) != repeats or any(not p[side]["valid"] for p in pairs for side in ("reference", "candidate")):
         return None
     names = [(m["name"], m["unit"]) for m in pairs[0]["reference"]["metrics"]]
@@ -101,11 +103,17 @@ def performance_scores(pairs, repeats, tolerance):
     for i, (name, unit) in enumerate(names):
         reference = [p["reference"]["metrics"][i]["value"] for p in pairs]
         candidate = [p["candidate"]["metrics"][i]["value"] for p in pairs]
+        if any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) or v <= 0
+               for v in reference + candidate):
+            return None
         ratios = [a / b for a, b in zip(reference, candidate)]
+        if any(not math.isfinite(v) or v <= 0 for v in ratios):
+            return None
         metrics.append({"name": name, "unit": unit, "reference_samples": reference, "candidate_samples": candidate,
                         "reference_median": statistics.median(reference), "candidate_median": statistics.median(candidate),
                         "paired_reference_over_candidate": ratios, "speedup": statistics.median(ratios),
-                        "score": 100 * min(1, (1 + tolerance) * statistics.median(ratios))})
+                        "score": metric_score(statistics.median(ratios)),
+                        "performance_policy_id": PERFORMANCE_POLICY_ID})
     return metrics
 
 
@@ -115,7 +123,8 @@ def evaluate(root, request, candidate, functional):
     spec = request["task"]["supplemental"]
     reference_request = {**request, "trial_id": digest({"trial": request["trial_id"], "reference": True})[:24]}
     reference = CachedWorkspace(root, reference_request, "verify")
-    evidence = {"protocol": "paired-checkpoint-v1", "spec_hash": digest(spec), "pairs": []}
+    evidence = {"protocol": "paired-checkpoint-v1", "performance_policy_id": PERFORMANCE_POLICY_ID,
+                "spec_hash": digest(spec), "pairs": []}
     try:
         checked(reference, "true")
         if reference.restore_source_ownership()["returncode"]:
@@ -156,6 +165,7 @@ def evaluate(root, request, candidate, functional):
             .6 * scores["functional"] + .2 * performance + .2 * future_score
             if performance is not None and future_score is not None else None)
         return {**functional, "functional_score": functional["score"], "functional_scores": functional["scores"],
+                "performance_policy_id": PERFORMANCE_POLICY_ID,
                 "scores": scores, "score": total, "performance_metrics": metrics or [], "performance_status": performance_status,
                 "future_evolution_status": evidence["future"]["status"], "supplemental_evaluation": evidence,
                 "supplemental_status": "needs_review" if future_score is None or performance_status == "measurement_failed" else "scored"}

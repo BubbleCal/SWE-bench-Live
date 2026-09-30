@@ -84,6 +84,10 @@ Serve any saved JSONL report without an upstream checkout:
 .venv/bin/metabench dashboard results.jsonl --port 8772
 ```
 
+Performance uses a symmetric relative score: reference parity=50, 2x faster=66.67,
+2x slower=33.33. Use `metabench rescore-performance results.jsonl --out rescored.jsonl`
+to apply it to archived paired timings, preserving original receipts.
+
 The existing combined Lance report remains in `.metabench/gpt61-sol-20260930/results/`.
 Its 480 scored checkpoints and frozen protocols are retained. The current local
 view uses `combined-results.jsonl` and `metadata.json` in that directory.

@@ -9,7 +9,7 @@ class CheckpointEvaluationTest(unittest.TestCase):
             return {"valid": True, "metrics": [{"name": name, "unit": "ns/op", "value": value}]}
         pairs = [{"reference": sample(10), "candidate": sample(20)} for _ in range(7)]
         result = performance_scores(pairs, 7, .05)
-        self.assertEqual(result[0]["score"], 52.5)
+        self.assertAlmostEqual(result[0]["score"], 100 / 3)
         self.assertEqual(result[0]["speedup"], .5)
         self.assertIsNone(performance_scores(pairs[:-1], 7, .05))
         pairs[2]["candidate"] = sample(20, "different workload")

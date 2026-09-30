@@ -47,6 +47,10 @@ def chart_data(rows):
         raise ValueError("compare only runs from the same frozen suite")
     if len({r.get("protocol_id", "legacy-command-v1") for r in rows}) != 1:
         raise ValueError("compare only runs from the same agent protocol")
+    policies = {r.get("performance_policy_id") for r in rows
+                if "performance" in r.get("scores", {}) or "performance" in r.get("score_dimensions", [])}
+    if len(policies) > 1:
+        raise ValueError("compare only results from the same performance scoring policy")
     dimensions = set()
     applicable = collections.defaultdict(set)
     groups = collections.defaultdict(dict)
@@ -144,6 +148,7 @@ def chart_data(rows):
         charts.append({"dimension": dimension, "title": TITLES.get(dimension, dimension.replace("_", " ").title() + " score"),
                        "png": stem + ".png", "svg": stem + ".svg", "points": points})
     return {"generator": "metabench.dimension-charts", "schema_version": 1,
+            "performance_policy_id": next(iter(policies), None),
             "suite_id": next(iter(suites)), "steps": rounds, "series": series, "charts": charts,
             "aggregation": "mean repeats within each task, then mean tasks; missing/ineligible checkpoints are gaps; intentionally excluded tasks require every remaining task to be complete"}
 
