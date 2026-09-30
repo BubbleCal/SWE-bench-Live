@@ -217,6 +217,15 @@ def run_matrix(suite, repo, environments, matrix, out, *, vm_count=None, paralle
             observed = {k: 0 for k in usage.FIELDS if k != "cost_usd"}
             seconds = 0.0
             active_seconds = queue_seconds = 0.0
+            def public_wait(start, end):
+                # A failed worker cannot provide test feedback. Abort the native
+                # turn instead of repeatedly returning errors while queued jobs
+                # keep extending its active-time allowance.
+                error = pool.errors.get(common["vm_id"])
+                if error:
+                    raise RuntimeError("public test VM unavailable: " + error)
+                return queue.queued_seconds(identity, start, end)
+
             def submit_grade(row):
                 # The payload owns an immutable patch string. Grading never reads
                 # the live checkout that the next native turn is already editing.
@@ -260,7 +269,7 @@ def run_matrix(suite, repo, environments, matrix, out, *, vm_count=None, paralle
                     raise RuntimeError(f"{identity} turn {step} was interrupted before its checkpoint; inspect saved events before retrying")
                 turn = agent_runner(spec, checkout.root, prompt, turn_dir, session_id=session, mcp_path=mcp_path,
                                     timeout=matrix.get("round_timeout_seconds"), stop=stop, previous_usage=previous_usage,
-                                    queue_wait=lambda start, end: queue.queued_seconds(identity, start, end),
+                                    queue_wait=public_wait,
                                     budget_mode=matrix["budget_mode"],
                                     queue_timeout=matrix["queue_timeout_seconds"] if matrix["budget_mode"] == "active" else None)
                 session = turn.get("session_id")

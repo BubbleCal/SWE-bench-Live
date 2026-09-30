@@ -121,13 +121,26 @@ else: print(json.dumps({'state':'not_started'}))
         self.copy(local_request, directory / "request.json.upload")
         self.remote("mv " + shlex.quote(str(directory / "request.json.upload")) + " " + shlex.quote(str(directory / "request.json")))
         argv = [self.spec.get("python", "python3"), "-m", "metabench.vm_worker", str(self.root), str(directory)]
-        command = ("nohup " + shlex.join(["env", "PYTHONPATH=" + str(self.control), *argv])
-                   + " >" + shlex.quote(str(directory / "worker.log")) + " 2>&1 </dev/null &")
-        # $! belongs to this exact launch; it is never inferred from a process name.
-        self.remote(command + " echo $! >" + shlex.quote(str(directory / "pid")))
+        script = '''import json,os,signal,subprocess,sys
+from pathlib import Path
+p=Path(sys.argv[1]);environment={**os.environ,'PYTHONPATH':sys.argv[2]}
+with (p/'worker.log').open('ab') as log:
+ process=subprocess.Popen(json.loads(sys.argv[3]),env=environment,stdin=subprocess.DEVNULL,
+                          stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
+try:
+ temporary=p/'pid.upload';temporary.write_text(str(process.pid)+'\\n');temporary.replace(p/'pid')
+except BaseException:
+ try:os.killpg(process.pid,signal.SIGTERM)
+ except ProcessLookupError:pass
+ raise
+'''
+        # Popen waits for exec before returning. Shell $! can expose a PID while
+        # /proc/<pid>/cmdline is still changing, falsely marking a live job dead.
+        # Publish the PID atomically and detach all streams from the SSH session.
+        self.python(script, directory, self.control, json.dumps(argv))
 
     def wait(self, identity, stop, on_started=None):
-        errors = 0
+        errors = missing_receipts = 0
         while not stop.is_set():
             try:
                 status = self.status(identity)
@@ -146,7 +159,11 @@ else: print(json.dumps({'state':'not_started'}))
             if status["state"] == "completed":
                 return status["result"]
             if status["state"] != "running":
-                raise RuntimeError("remote job has no completed receipt: " + identity)
+                missing_receipts += 1
+                if missing_receipts >= 5:
+                    raise RuntimeError("remote job has no completed receipt: " + identity)
+            else:
+                missing_receipts = 0
             stop.wait(1)
         raise InterruptedError("controller stopped; remote job retains the VM lock until it exits")
 
