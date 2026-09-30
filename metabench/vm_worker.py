@@ -216,7 +216,7 @@ def run(root, job_dir):
                         result = evaluate_checkpoint(root, request, workspace, result)
                     except Exception as error:
                         result = {**result, "functional_score": result["score"], "functional_scores": result["scores"],
-                                  "scores": {"functional": result["score"], "performance": None, "future_evolution": None},
+                                  "scores": {"functional": result["score"], "performance": None},
                                   "score": None, "supplemental_status": "needs_review", "supplemental_error": str(error)}
         except Exception as error:
             result = {"status": "infrastructure_error", "error": str(error), "kind": request["kind"]}

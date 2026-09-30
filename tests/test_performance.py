@@ -62,10 +62,12 @@ class RescoreTest(unittest.TestCase):
         result=rescore_rows([row])[0]
         self.assertEqual(row,original)
         self.assertAlmostEqual(result['scores']['performance'],100/3)
-        self.assertAlmostEqual(result['score'],80+20/3)
+        self.assertAlmostEqual(result['score'],75+25/3)
         for field in ('usage','patch_hash','wall_seconds','suite_id'):
             self.assertEqual(result[field],original[field])
         self.assertEqual(result['performance_rescoring']['source_scores'],original['scores'])
+        self.assertEqual(result['evaluation_rescoring']['source_scores'],original['scores'])
+        self.assertEqual(result['evaluation_rescoring']['source_total_score'],original['score'])
         self.assertEqual(result['performance_metrics'][0]['reference_samples'],[100]*7)
         self.assertEqual(rescore_rows([result]),[result])
 

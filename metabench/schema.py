@@ -82,21 +82,15 @@ def validate_task(task):
     if supplemental is not None:
         if not isinstance(supplemental, dict) or not re.fullmatch(r"[a-z][a-z0-9_-]*", supplemental.get("crate", "")):
             raise ValueError("supplemental evaluation requires a safe crate name")
-        for key in ("benchmark_source", "future_source"):
-            if not isinstance(supplemental.get(key), str) or not supplemental[key].strip():
-                raise ValueError("supplemental evaluation requires frozen Rust sources")
-        validate_append(supplemental.get("future_append", {}))
-        if not isinstance(supplemental.get("future_patch", ""), str):
-            raise ValueError("future_patch must be a frozen patch string")
-        filters = supplemental.get("future_lib_filters")
-        if filters is not None and (not isinstance(filters, list) or not filters or any(
-                not isinstance(f, str) or not re.fullmatch(r"[a-zA-Z0-9_:]+", f) for f in filters)):
-            raise ValueError("future_lib_filters must be test-name prefixes")
-        for key in ("repeats", "future_test_count"):
-            if type(supplemental.get(key)) is not int or supplemental[key] < 1:
-                raise ValueError("supplemental counts must be positive integers")
+        if not isinstance(supplemental.get("benchmark_source"), str) or not supplemental["benchmark_source"].strip():
+            raise ValueError("supplemental evaluation requires a frozen benchmark source")
+        if type(supplemental.get("repeats")) is not int or supplemental["repeats"] < 1:
+            raise ValueError("supplemental repeats must be a positive integer")
+        features = supplemental.get("features", [])
+        if not isinstance(features, list) or any(not isinstance(f, str) or not re.fullmatch(r"[a-zA-Z0-9_-]+", f) for f in features):
+            raise ValueError("supplemental features must be safe Cargo feature names")
         tolerance = supplemental.get("tolerance")
-        if isinstance(tolerance, bool) or not isinstance(tolerance, (int, float)) or not math.isfinite(tolerance) or not 0 <= tolerance <= 1:
+        if tolerance is not None and (isinstance(tolerance, bool) or not isinstance(tolerance, (int, float)) or not math.isfinite(tolerance) or not 0 <= tolerance <= 1):
             raise ValueError("supplemental tolerance must be between zero and one")
     return task
 

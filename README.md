@@ -1,7 +1,7 @@
 # Meta-bench
 
 Generate and freeze benchmark tasks from a repository's history, then compare
-native coding agents on functionality, performance and future compatibility.
+native coding agents on functionality and performance.
 Each model / effort / issue has a private worktree and a persistent CLI session.
 Every round is scored through a VM queue while the next round begins.
 
@@ -88,9 +88,18 @@ Performance uses a symmetric relative score: reference parity=50, 2x faster=66.6
 2x slower=33.33. Use `metabench rescore-performance results.jsonl --out rescored.jsonl`
 to apply it to archived paired timings, preserving original receipts.
 
-The existing combined Lance report remains in `.metabench/gpt61-sol-20260930/results/`.
-Its 480 scored checkpoints and frozen protocols are retained. The current local
-view uses `combined-results.jsonl` and `metadata.json` in that directory.
+The active Lance task set is `benchmarks/lance/current.json`: issue 004 is retained,
+issues 001–003 and 005–015 are excluded based on all 32 observed functional checkpoints
+passing, and nine new historical regression tasks (016–024) replace them.
+Private candidates, validations and the frozen suite live in
+`.metabench/lance-discriminative-20260930/`. New tasks have no model scores until run.
+The current dashboard shows functional and performance only; the total is 75% functional
+and 25% performance, gated to zero by a critical functional failure.
+
+The previous 480 checkpoint receipts and original three-dimension protocol remain
+archived under `.metabench/gpt61-sol-20260930/results/` and are not rewritten.
+The current view explicitly labels retained historical issue 004 results and leaves
+untested new tasks as gaps. It defaults to 004 so retained results remain inspectable.
 
 ## Development
 

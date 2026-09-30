@@ -22,7 +22,7 @@ class DashboardTest(unittest.TestCase):
         data=dashboard_data(rows)
         self.assertIsNone(data["charts"][0]["points"]["config"][0]["score"])
         self.assertEqual(data["task_charts"]["a"][0]["points"]["config"][0]["score"],100)
-        self.assertEqual(len(data["charts"]),3)
+        self.assertEqual(len(data["charts"]),2)
 
     def test_export_is_standalone_and_does_not_embed_transcripts_or_executable_labels(self):
         unsafe="</script><script>alert(1)</script>"

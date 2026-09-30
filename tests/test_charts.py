@@ -70,10 +70,10 @@ class ChartsTest(unittest.TestCase):
 
     def test_declared_dimensions_survive_all_failed_generation(self):
         failed = row(status="infrastructure_error", score=None, scores={}, score_eligible=False,
-                     score_dimensions=["correctness", "future_evolution"])
+                     score_dimensions=["correctness", "performance"])
         data = chart_data([failed])
         self.assertEqual(len(data["charts"]), 2)
-        self.assertIsNone(points([failed], "future_evolution")[0]["score"])
+        self.assertIsNone(points([failed], "performance")[0]["score"])
 
     def test_duplicate_mixed_suite_and_invalid_scores_are_rejected(self):
         for rows in ([row(), row()], [row(), row(suite_id="different")],
@@ -98,9 +98,9 @@ class ChartsTest(unittest.TestCase):
             self.assertEqual(completed.returncode, 0, completed.stderr)
             assets = root / "comparison report.charts"
             data = json.loads((assets / "chart-data.json").read_text())
-            self.assertEqual(len(data["charts"]), 3)
+            self.assertEqual(len(data["charts"]), 2)
             self.assertEqual(len(data["series"]), 3)
-            self.assertEqual(out.read_text().count("!["), 3)
+            self.assertEqual(out.read_text().count("!["), 2)
             self.assertIn("comparison%20report.charts/", out.read_text())
             self.assertEqual([p["score"] for p in data["charts"][0]["points"]["high"]], [80, 100, 40])
             for chart in data["charts"]:
@@ -110,9 +110,9 @@ class ChartsTest(unittest.TestCase):
             (assets / "user-notes.txt").write_text("keep me")
             fewer = copy.deepcopy(rows)
             for item in fewer:
-                del item["scores"]["future_evolution"]
+                del item["scores"]["performance"]
             write_report(fewer, out)
-            self.assertEqual(len(list(assets.glob("*.png"))), 2)
+            self.assertEqual(len(list(assets.glob("*.png"))), 1)
             self.assertEqual((assets / "user-notes.txt").read_text(), "keep me")
 
 

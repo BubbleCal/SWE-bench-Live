@@ -16,10 +16,10 @@ The one-shot curation adapter uses the optional `curation` extra (LiteLLM).
 - Give every trial a private Git worktree and session; run trials concurrently.
 - Queue public tests and hidden verification on a configurable pool of existing VMs,
   with one execution lock per physical machine and persistent per-trial build caches.
-- Evaluate immutable submission patches separately, after the complete trajectory.
+- Evaluate each immutable checkpoint through the VM queue while the next round begins.
 - Record `(model, reasoning, step, score)` with configuration, per-dimension evidence,
   cumulative model calls, reported token usage, cost, elapsed time, and patch identity.
-- Score correctness, regressions, explicit compatibility checks, and measured performance.
+- Score functional correctness/regressions and measured performance.
 - Automatically produce one score-vs-round figure per dimension, comparing model/reasoning configurations.
 - Strictly regrade SWE-bench-Live status maps, counting missing/skipped expected tests as failures.
 
@@ -30,8 +30,7 @@ assertion. It is a reviewed historical pilot, not a representative Lance benchma
 
 Automatic discovery of future requirements, subjective code review scores, automatic
 task-family sampling, confidence intervals, model rankings, and token/cost enforcement
-are not implemented yet. Curated future patches and consumer probes can be frozen into
-the supplemental evaluator described below.
+are not implemented yet. The former evolution evaluator has been removed; archived receipts retain its historical evidence.
 No placeholder score is assigned to an unsupported dimension. The native runner defaults to at most **4 user-level conversation rounds**, with a **900-second (15-minute) active budget per round**. Active time is turn wall time minus the union of this trial's public-test queue, dispatch and VM-lock waits. Reasoning, editing, compilation and test execution consume the budget. Overlapping waits are deducted once and clipped at round boundaries; hidden grading never directly grants extra budget. Set `max_rounds` and `round_timeout_seconds` to override these defaults; explicit `null` disables the deadline. `budget_mode: "wall"` is an explicitly separate protocol. The resolved defaults are frozen in the run manifest. CLI tool iteration and context management remain native.
 
 Each turn and checkpoint records `active_seconds`, `queue_wait_seconds`, and `wall_seconds`; checkpoint values are cumulative for that trial. An executing public test remains charged even if the same trial has another request queued. This is an elapsed-time budget, not a measurement of model inference CPU time; work the native CLI overlaps with a queue wait is not separately attributable. The dashboard shows mean cumulative times per trial, not campaign elapsed time. Token counters remain observations. The separate `queue_timeout_seconds` infrastructure watchdog defaults to 7200 seconds per round: exceeding it is an infrastructure error, never model failure. It can be explicitly set to `null`. VM acquisition is reported live and mapped from remote elapsed duration to controller time, so VM lock contention is excluded before the command finishes.
@@ -183,7 +182,7 @@ interactive HTML. To compare configurations, pass their JSONL files together;
 configuration hashes and frozen suite checks still apply. The live viewer binds
 only to loopback and exposes no file browser. Optional `--metadata status.json`
 accepts `title`, `subtitle`, `phase`, `note`, `updated_at` and a `progress` object
-with `planned`, `generated`, `functional`, `performance`, and `evolution` counters.
+with `planned`, `generated`, `functional`, and `performance` counters.
 Result producers must publish their updates; the viewer does not run or grade models.
 
 Validation requires repeatable target failures on the base, passing reference checks,
@@ -279,16 +278,13 @@ test commands and any public-API facade are part of the validated task fingerpri
 Validate base/reference controls again after changing this transport. Private helper
 signatures are not public compatibility contracts.
 
-Rust pilot tasks may also freeze a `supplemental` object containing `crate`,
-`benchmark_source`, `future_source`, `future_test_count`, `repeats`, and `tolerance`.
-Historical replay can additionally freeze `future_patch`, `future_append` sibling
-modules and `future_lib_filters`. Text conflicts remain unscored for review, not
-compatibility failures. Reference source is restored after replay before timing,
-so future changes cannot alter the performance baseline.
-The verifier runs these private sources in its own container, alongside a separate
-persistent historical-reference container. Each checkpoint job covers functional checks,
-paired performance measurements and downstream compatibility tests under one VM lock.
-The reference and candidate are timed alternately on CPU 2, excluding compilation.
+Rust pilot tasks may freeze a `supplemental` object containing `crate`,
+`benchmark_source`, `repeats`, and optional Cargo `features`. The former future
+sources, patches and consumer probes are not executed. Historical task bundles can
+still be read, but future_evolution is omitted from current reports.
+The verifier runs the private functional checks and paired performance measurements
+under one VM lock, with a separate historical-reference container. The reference
+and candidate are timed alternately on CPU 2, excluding compilation.
 Performance scoring uses `relative-latency-v2`: for each workload, let `r` be the
 median of its paired reference/candidate latency ratios. Its score is
 `100 * r / (1 + r)`: parity is 50, 2x faster is 66.67, 2x slower is 33.33.
@@ -308,13 +304,14 @@ Rescore archived paired timing samples without new agent calls or VM execution:
 The source file is never overwritten. Every migrated row preserves its previous
 scores and total, and a policy sidecar records the source checksum. Missing timing
 samples cannot be inferred from an old score. Raw timing values, functional gates,
-excluded cases, future compatibility, usage and trajectory identities are retained.
+excluded cases, usage and trajectory identities are retained. Archived evolution evidence stays in original receipts.
 The weighted total is recalculated; original run audits remain historical evidence.
 
-Scores use functional 60%, performance 20%, compatibility 20%; a critical functional
-failure gates the total to zero and excludes performance. Missing tests, failed reference
-controls and measurement/build failures remain reviewable rather than receiving invented
-scores. These consumer tests measure only their frozen scope, not arbitrary future changes.
+Scores use functional 75% and performance 25%, preserving the previous 60:20 ratio.
+A critical functional failure gates the total to zero and excludes performance.
+Missing tests, failed reference controls and measurement/build failures remain
+reviewable rather than receiving invented scores. Evaluation policy
+`functional-performance-v1` is recorded in new run manifests and result rows.
 
 VM layout and locking:
 
@@ -414,9 +411,9 @@ For `--out comparison.md`, the report links to:
   configuration IDs and aggregation rules.
 
 Dimensions are discovered from `scores` and `score_dimensions` in the result rows;
-they are not hardcoded to the pilot's three dimensions. `score_dimensions` records
+they are not hardcoded to the pilot's two dimensions. `score_dimensions` records
 task applicability even when generation or evaluation fails. Imported evaluators may
-provide additional names such as `functional` or `future_evolution` in `scores`.
+provide additional names such as `functional` in `scores`. Historical `future_evolution` is omitted.
 The report uses those scores as provided and does not invent or recalculate dimensions.
 
 Missing rounds, unreported scores, agent/evaluator errors and ineligible results are

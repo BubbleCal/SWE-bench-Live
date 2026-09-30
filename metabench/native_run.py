@@ -74,14 +74,15 @@ def run_matrix(suite, repo, environments, matrix, out, *, vm_count=None, paralle
         if key not in identities:
             identities[key] = cli_identity(spec)
     from .performance import PERFORMANCE_POLICY_ID
-    configuration = {"protocol": protocol, "performance_policy_id": PERFORMANCE_POLICY_ID,
+    from .scoring import EVALUATION_POLICY_ID
+    configuration = {"protocol": protocol, "performance_policy_id": PERFORMANCE_POLICY_ID, "evaluation_policy_id": EVALUATION_POLICY_ID,
                      "suite_id": suite["suite_id"], "matrix": matrix,
                      "vm_count": count, "parallel_agents": workers, "environments": environments,
                      "native_cli": identities, "evaluation_schedule": "checkpoint-pipeline-v1",
                      "trial_order": "task-then-configuration",
                      "execution_source_hash": digest({name: Path(__file__).with_name(name).read_text() for name in (
                          "native_run.py", "native_cli.py", "checkouts.py", "queue.py", "test_service.py", "test_mcp.py",
-                         "vm_pool.py", "vm_worker.py", "checkpoint_eval.py", "performance.py", "verification.py", "evaluate.py", "process.py", "usage.py", "schema.py")})}
+                         "vm_pool.py", "vm_worker.py", "checkpoint_eval.py", "performance.py", "scoring.py", "verification.py", "evaluate.py", "process.py", "usage.py", "schema.py")})}
     experiment = digest(configuration)
     if out.exists() and not resume:
         raise ValueError("output exists; use --resume for this exact matrix")
@@ -119,11 +120,11 @@ def run_matrix(suite, repo, environments, matrix, out, *, vm_count=None, paralle
                     label = re.sub(r"[^a-zA-Z0-9_.-]", "-", f"{spec['model']}-{spec['reasoning']}-{task['instance_id']}")[:100]
                     folder = out / "trials" / (label + "-" + identity[:8])
                     common = {"suite_id": suite["suite_id"], "protocol_id": protocol,
-                              "performance_policy_id": PERFORMANCE_POLICY_ID, "config_id": config_id,
+                              "performance_policy_id": PERFORMANCE_POLICY_ID, "evaluation_policy_id": EVALUATION_POLICY_ID, "config_id": config_id,
                               "model": spec["model"], "reasoning": spec["reasoning"], "provider": spec["provider"],
                               "task_id": task["instance_id"], "repeat": repeat, "trial_id": identity, "vm_id": vm,
                               "artifact_directory": str(folder), "score_dimensions":
-                              ["functional", "performance", "future_evolution"] if task.get("supplemental") else sorted(task["weights"])}
+                              ["functional", "performance"] if task.get("supplemental") else sorted(task["weights"])}
                     jobs.append((spec, task, folder, common))
                     for step in range(1, rounds + 1):
                         saved = folder / f"score-{step}.json"

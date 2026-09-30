@@ -7,9 +7,9 @@ import statistics
 
 
 ERROR_STATUSES = {"agent_error", "infrastructure_error", "evaluation_error", "not_run_after_agent_error"}
-DIMENSION_ORDER = ("functional", "correctness", "regression", "compatibility", "performance", "future_evolution")
+DIMENSION_ORDER = ("functional", "correctness", "regression", "compatibility", "performance")
 EFFORT_ORDER = ("none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra")
-TITLES = {"functional": "Functional score", "future_evolution": "Future evolution compatibility"}
+TITLES = {"functional": "Functional score"}
 
 
 def plotting_backend():
@@ -71,7 +71,7 @@ def chart_data(rows):
             raise ValueError("scores must be an object and score_dimensions must be a list")
         if any(not isinstance(name, str) or not name.strip() for name in declared_names):
             raise ValueError("dimension names must be nonempty strings")
-        declared = set(declared_names) | set(scores)
+        declared = (set(declared_names) | set(scores)) - {"future_evolution"}
         if any(not isinstance(name, str) or not name.strip() for name in declared):
             raise ValueError("dimension names must be nonempty strings")
         dimensions.update(declared)

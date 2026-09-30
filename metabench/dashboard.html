@@ -19,6 +19,7 @@
   <div class="toolbar"><label>Task<br><select id="task" aria-label="Task"><option value="">All tasks</option></select></label><label class="switch"><input id="zoom-performance" type="checkbox" checked>Zoom performance</label><label class="switch"><input id="auto" type="checkbox" checked>Auto · 5s</label><button id="refresh" type="button">Refresh</button><button id="download" type="button">Export</button></div>
   <div id="models" class="models" aria-label="Visible model configurations"></div>
   <div id="progress" class="progress" aria-live="polite"></div>
+  <details id="task-details" hidden><summary>Problem</summary><p id="task-problem" style="white-space:pre-wrap;margin:10px 0 16px"></p></details>
   <section id="charts" class="charts" aria-label="One chart per score dimension"></section>
   <section class="details"><div class="round-control"><h2 style="margin:0">Round <span id="round-value">5</span></h2><input type="range" id="round" min="1" max="5" value="5" aria-label="Inspect round"></div><div class="table-wrap"><table><thead><tr id="table-head"></tr></thead><tbody id="table-body"></tbody></table></div></section>
   <p class="foot">≥ lower bound · Performance excludes failed solutions.</p>
@@ -31,17 +32,17 @@
   const boot=JSON.parse(document.getElementById('metabench-data').textContent);
   let data=boot.data, busy=false, poll=null, selected=new Set(), selectedTask='', zoomPerformance=true, round=Math.max(...data.steps,1);
   const $=id=>document.getElementById(id), ns='http://www.w3.org/2000/svg', storageKey='metabench:'+data.suite_id;
-  const dashed=['','7 4','2 4'], metricNames={functional:'Functional',performance:'Performance',future_evolution:'Evolution compatibility'};
+  const dashed=['','7 4','2 4'], metricNames={functional:'Functional',performance:'Performance'};
   const fmt=n=>n==null?'Pending':Number(n).toFixed(2), integer=n=>Number(n).toLocaleString();
   const text=(tag,value,className)=>{const n=document.createElement(tag);n.textContent=value;if(className)n.className=className;return n;};
   const svgEl=(tag,attrs={},value)=>{const n=document.createElementNS(ns,tag);for(const [k,v] of Object.entries(attrs))n.setAttribute(k,v);if(value!==undefined)n.textContent=value;return n;};
   const style=s=>({color:'var(--c'+(data.series.indexOf(s)%7)+')',dash:dashed[Math.max(0,['high','xhigh','max'].indexOf(s.reasoning))%3]});
-  function restore(){try{const old=JSON.parse(localStorage.getItem(storageKey));selected=new Set(old?old.selected:data.series.map(s=>s.config_id));selectedTask=old?.task||'';round=old?.round||round;zoomPerformance=old?.zoomPerformance??true;}catch{selected=new Set(data.series.map(s=>s.config_id));}}
+  function restore(){try{const old=JSON.parse(localStorage.getItem(storageKey));selected=new Set(old?old.selected:data.series.map(s=>s.config_id));selectedTask=old?.task??data.metadata.default_task??'';round=old?.round||round;zoomPerformance=old?.zoomPerformance??true;}catch{selected=new Set(data.series.map(s=>s.config_id));}}
   function save(){try{localStorage.setItem(storageKey,JSON.stringify({selected:[...selected],task:selectedTask,round,zoomPerformance}));}catch{}}
   function dimensions(){return selectedTask?(data.task_charts[selectedTask]||[]):data.charts;}
   function point(chart,id,step){return chart?.points[id]?.find(p=>p.step===step)||{step,score:null,scored_tasks:0,applicable_tasks:chart?(selectedTask?1:data.tasks.length):0,missing_tasks:[],excluded_tasks:[]};}
   function labelPoint(p){if(p.score!=null)return fmt(p.score);if(!p.applicable_tasks)return 'Not applicable';if(!p.missing_tasks?.length&&p.excluded_tasks?.length===p.applicable_tasks)return 'Excluded';return 'Pending';}
-  function coverage(p){return p.scored_tasks+'/'+p.applicable_tasks+(p.excluded_tasks?.length?' · '+p.excluded_tasks.length+' excluded':'');}
+  function coverage(p){return p.scored_tasks+'/'+p.applicable_tasks+' scored'+(p.excluded_tasks?.length?' · '+p.excluded_tasks.length+' excluded':'');}
   function shortLabel(s){
     const model=s.model.replace(/^claude-opus-(\d+)-(\d+)$/,'Opus $1.$2').replace(/^gpt-(\d+)-/,'GPT$1 ').replace(/^claude-/,'');
     return model+' '+s.reasoning+(data.series.filter(x=>x.model===s.model&&x.reasoning===s.reasoning).length>1?' '+s.config_id.slice(0,4):'');
@@ -70,7 +71,7 @@
     $('title').textContent=data.metadata.title||'Meta-bench';
     $('subtitle').textContent=data.series.length+' configs · '+data.tasks.length+' tasks · '+data.steps.length+' rounds';
     const task=$('task');task.replaceChildren(text('option','All tasks'));task.firstChild.value='';
-    for(const name of data.tasks){const o=text('option',name);o.value=name;task.append(o);}if(!data.tasks.includes(selectedTask))selectedTask='';task.value=selectedTask;
+    for(const name of data.tasks){const title=data.metadata.task_titles?.[name],o=text('option',title?name+' · '+title:name);o.value=name;task.append(o);}if(!data.tasks.includes(selectedTask))selectedTask='';task.value=selectedTask;
     $('models').replaceChildren();
     for(const model of [...new Set(data.series.map(s=>s.model))]){
       const field=document.createElement('fieldset');field.append(text('legend',model));const choices=text('div','','choices');
@@ -92,7 +93,9 @@
     const stamp=data.metadata.updated_at||data.generated_at;$('updated').textContent=new Date(typeof stamp==='number'?stamp*1000:stamp).toLocaleString();
   }
   function draw(){
+    const description=data.metadata.task_problems?.[selectedTask];$('task-details').hidden=!description;$('task-problem').textContent=description||'';
     $('tooltip').hidden=true;const host=$('charts');host.replaceChildren();
+    host.style.gridTemplateColumns=window.innerWidth>1050?'repeat('+Math.max(1,Math.min(dimensions().length,3))+',minmax(0,1fr))':'1fr';
     for(const base of data.charts){
       const chart=dimensions().find(c=>c.dimension===base.dimension),panel=text('article','','chart');panel.dataset.dimension=base.dimension;panel.append(text('h2',metricNames[base.dimension]||base.title));
       const svg=svgEl('svg',{role:'group','aria-label':(metricNames[base.dimension]||base.title)+' by submission round'});panel.append(svg);host.append(panel);

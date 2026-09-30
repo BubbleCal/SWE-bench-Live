@@ -9,6 +9,8 @@ import statistics
 import tempfile
 from pathlib import Path
 
+from .scoring import EVALUATION_POLICY_ID, without_evolution
+
 PERFORMANCE_POLICY_ID = "relative-latency-v2"
 LEGACY_POLICY_ID = "paired-latency-v1-tolerance-cap"
 
@@ -29,7 +31,7 @@ def rescore_rows(rows):
 
     Historical trials and their generation protocol are not changed. Preserve
     their previous scores as provenance and fail rather than invent timings.
-    Only paired-checkpoint functional/performance/future result rows are accepted.
+    Only paired-checkpoint functional/performance receipts are accepted; legacy evolution stays in provenance.
     """
     from .checkpoint_eval import performance_scores
     rescored = []
@@ -44,7 +46,7 @@ def rescore_rows(rows):
         if not isinstance(row.get("critical_pass"), bool):
             raise ValueError("missing critical functional decision")
         scores = row.get("scores", {})
-        if not {"functional", "performance", "future_evolution"}.issubset(scores):
+        if not {"functional", "performance"}.issubset(scores):
             raise ValueError("missing checkpoint score dimensions")
         row["performance_rescoring"] = {
             "source_policy_id": row.get("performance_policy_id", LEGACY_POLICY_ID),
@@ -52,6 +54,8 @@ def rescore_rows(rows):
             "source_metric_scores": [{"name": m["name"], "score": m["score"]}
                                      for m in row.get("performance_metrics", [])],
         }
+        # Capture the original evaluation policy and totals before changing metrics.
+        row = without_evolution([row])[0]
         performance = None
         if status == "measured":
             if not row["critical_pass"]:
@@ -77,11 +81,8 @@ def rescore_rows(rows):
             raise ValueError("performance exclusion conflicts with functional success")
         row["performance_policy_id"] = PERFORMANCE_POLICY_ID
         row["scores"]["performance"] = performance
-        row["score"] = 0.0 if not row["critical_pass"] else (
-            .6 * scores["functional"] + .2 * performance + .2 * scores["future_evolution"]
-            if performance is not None and scores["future_evolution"] is not None else None)
         rescored.append(row)
-    return rescored
+    return without_evolution(rescored)
 
 
 def rescore_file(source, out):
@@ -103,6 +104,7 @@ def rescore_file(source, out):
     from .schema import write_json
     write_json(out.with_suffix(out.suffix + ".policy.json"), {
         "performance_policy_id": PERFORMANCE_POLICY_ID,
+        "evaluation_policy_id": EVALUATION_POLICY_ID,
         "formula": "100 * median(reference_latency / candidate_latency) / (1 + median(reference_latency / candidate_latency))",
         "source_sha256": hashlib.sha256(raw).hexdigest(), "rows": len(rows),
         "measurements_reused": True, "model_calls": 0,

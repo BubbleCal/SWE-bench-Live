@@ -1,12 +1,15 @@
+import json
 import unittest
+from unittest.mock import patch
 
-from metabench.checkpoint_eval import future, performance_scores
+from metabench.checkpoint_eval import evaluate, performance_scores
 
 
 class CheckpointEvaluationTest(unittest.TestCase):
     def test_paired_scores_reject_missing_or_misaligned_metrics(self):
         def sample(value, name="latency"):
             return {"valid": True, "metrics": [{"name": name, "unit": "ns/op", "value": value}]}
+
         pairs = [{"reference": sample(10), "candidate": sample(20)} for _ in range(7)]
         result = performance_scores(pairs, 7, .05)
         self.assertAlmostEqual(result[0]["score"], 100 / 3)
@@ -15,35 +18,45 @@ class CheckpointEvaluationTest(unittest.TestCase):
         pairs[2]["candidate"] = sample(20, "different workload")
         self.assertIsNone(performance_scores(pairs, 7, .05))
 
-    def test_missing_tests_and_build_errors_are_not_compatibility_success(self):
+    def test_legacy_evolution_payload_is_not_executed_or_scored(self):
         class Workspace:
-            def __init__(self, output, code):
-                self.output, self.code = output, code
-            def command(self, command, timeout, source=None):
-                if command.startswith("cargo test"):
-                    return {"returncode": self.code, "output": self.output, "timed_out": False}
-                return {"returncode": 0, "output": ""}
-        spec = {"crate": "fixture", "future_source": "// frozen", "future_test_count": 2}
-        for output, code in [("error: compiler failed", 101),
-                             ("test result: ok. 0 passed; 0 failed; 0 ignored;", 0),
-                             ("test result: ok. 1 passed; 0 failed; 0 ignored;", 0),
-                             ("test result: ok. 2 passed; 0 failed; 0 ignored;", 101)]:
-            with self.subTest(output=output, code=code):
-                self.assertIsNone(future(Workspace(output, code), spec)["score"])
-        result = future(Workspace("test result: FAILED. 1 passed; 1 failed; 0 ignored;", 101), spec)
-        self.assertEqual(result["score"], 50)
-        self.assertEqual(result["status"], "behavior_failed")
+            container = "fixture"
 
-    def test_future_patch_conflict_is_not_a_candidate_behavior_failure(self):
-        class Workspace:
-            def command(self, command, timeout, source=None):
-                self.last = command
-                return {"returncode": 1, "output": "patch does not apply"}
-        workspace = Workspace()
-        result = future(workspace, {"future_patch": "frozen historical patch"})
-        self.assertEqual(result["status"], "text_conflict_needs_review")
-        self.assertIsNone(result["score"])
-        self.assertNotIn('--index', workspace.last)
+            def __init__(self, *args):
+                self.commands = []
+
+            def command(self, command, timeout=900, input=None):
+                self.commands.append(command)
+                output = ""
+                if "--message-format=json" in command:
+                    output = json.dumps({"reason": "compiler-artifact",
+                                         "target": {"name": "metabench_perf"},
+                                         "executable": "/fixture/bench"})
+                elif command.startswith("taskset"):
+                    output = "MB_METRIC " + json.dumps({"name": "latency", "unit": "ns/op", "value": 100})
+                return {"returncode": 0, "output": output}
+
+            def prepare(self, *args):
+                pass
+
+            def restore_source_ownership(self):
+                return {"returncode": 0}
+
+        candidate, reference = Workspace(), Workspace()
+        task = {"patch": "reference", "supplemental": {
+            "crate": "fixture", "benchmark_source": "// bench", "repeats": 7,
+            "features": ["safe-feature"], "future_source": "// must not execute", "future_patch": "bad patch"}}
+        functional = {"score": 100, "scores": {"correctness": 100}, "critical_pass": True, "checks": {}}
+        with patch("metabench.vm_worker.CachedWorkspace", return_value=reference), \
+                patch("metabench.vm_worker.execute", return_value={"returncode": 0}):
+            result = evaluate("/fixture", {"trial_id": "trial", "task": task, "patch": "candidate"},
+                              candidate, functional)
+        self.assertEqual(result["scores"], {"functional": 100, "performance": 50})
+        self.assertEqual(result["score"], 87.5)
+        self.assertNotIn("future_evolution_status", result)
+        commands = reference.commands + candidate.commands
+        self.assertFalse(any("cargo test" in c or "git apply" in c or "metabench_future" in c for c in commands))
+        self.assertTrue(any("--features safe-feature" in c for c in commands))
 
 
 if __name__ == "__main__":

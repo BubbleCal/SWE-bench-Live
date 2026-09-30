@@ -1,0 +1,129 @@
+{
+  "evaluation_policy_id": "functional-performance-v1",
+  "excluded_task_ids": [
+    "lance-pilot-001",
+    "lance-pilot-002",
+    "lance-pilot-003",
+    "lance-pilot-005",
+    "lance-pilot-006",
+    "lance-pilot-007",
+    "lance-pilot-008",
+    "lance-pilot-009",
+    "lance-pilot-010",
+    "lance-pilot-011",
+    "lance-pilot-012",
+    "lance-pilot-013",
+    "lance-pilot-014",
+    "lance-pilot-015"
+  ],
+  "exclusion_basis": "all 32 observed functional checkpoints passed for each excluded task; performance discrimination is not the exclusion criterion",
+  "name": "lance-discriminative10",
+  "new_task_ids": [
+    "lance-pilot-016",
+    "lance-pilot-017",
+    "lance-pilot-018",
+    "lance-pilot-019",
+    "lance-pilot-020",
+    "lance-pilot-021",
+    "lance-pilot-022",
+    "lance-pilot-023",
+    "lance-pilot-024"
+  ],
+  "performance_policy_id": "relative-latency-v2",
+  "private_candidates": ".metabench/lance-discriminative-20260930/candidates.json",
+  "private_environments": ".metabench/lance-discriminative-20260930/environments.json",
+  "private_suite": ".metabench/lance-discriminative-20260930/suite.json",
+  "retained_task_ids": [
+    "lance-pilot-004"
+  ],
+  "status": "ready",
+  "suite_id": "f729bf4218a292eb9128f0ffd45412ce976df73ee38d7375c317b90aa9b80500",
+  "tasks": [
+    {
+      "base_commit": "bea84ccb43845db19c948b28badaf3de9d51c25d",
+      "instance_id": "lance-pilot-004",
+      "reference_commit": "ff11c08f98099ae4959381354a6e595269c63324",
+      "source_url": "https://github.com/lance-format/lance/pull/9048",
+      "title": "Preserve sliced-array values and release oversized source buffers",
+      "title_zh": "切片拷贝的偏移错误与单行内存保留"
+    },
+    {
+      "base_commit": "93ba1d20c78c17693a7f02ab787b6cefbd1bec89",
+      "instance_id": "lance-pilot-016",
+      "reference_commit": "f1f3e4317dc78413d411a1f495de8157e2c8bdf1",
+      "source_url": "https://github.com/lance-format/lance/pull/8677",
+      "title": "Typed errors survive shared ownership and ReplayExec fan-out",
+      "title_zh": "共享所有权和 ReplayExec 的错误类型保留"
+    },
+    {
+      "base_commit": "264f1762c9495f3728e2d592183e491a09b96780",
+      "instance_id": "lance-pilot-017",
+      "reference_commit": "bb3a485e7561619008a94371c892554799826752",
+      "source_url": "https://github.com/lance-format/lance/pull/9510",
+      "title": "SharedStream survives a cancelled half without leaked buffers",
+      "title_zh": "共享流取消后的进度与资源释放"
+    },
+    {
+      "base_commit": "d57d0fb426209e350011ef7fdfd086c9a6a38942",
+      "instance_id": "lance-pilot-018",
+      "reference_commit": "9c99a393715c2d3a7a1b60124477fae7ac0c4240",
+      "source_url": "https://github.com/lance-format/lance/pull/8929",
+      "title": "Compare minimal and complete logical Blob v2 schemas semantically",
+      "title_zh": "Blob v2 最小和完整逻辑 schema 的语义比较"
+    },
+    {
+      "base_commit": "5dbd1400dc4457013aabd5c0eb1714c12acf5b77",
+      "instance_id": "lance-pilot-019",
+      "reference_commit": "0bdf0a1ce4f610d337203a2e28b0f934847e1a9b",
+      "source_url": "https://github.com/lance-format/lance/pull/7638",
+      "title": "Cancelled reads return scheduler backpressure reservations",
+      "title_zh": "取消读取后的调度器背压额度归还"
+    },
+    {
+      "base_commit": "f24e42c11a742581365e1cbe17c906ea2dac1bc6",
+      "instance_id": "lance-pilot-020",
+      "reference_commit": "4f39296e7d7e7bb8444f70caa3a09014de6af4cf",
+      "source_url": "https://github.com/lance-format/lance/pull/7588",
+      "title": "Same-priority chunks resume after a higher-priority read",
+      "title_zh": "同优先级分块请求的抢占恢复与死锁"
+    },
+    {
+      "base_commit": "63aea116831ea4996d506342a38dc7c3aba31725",
+      "instance_id": "lance-pilot-021",
+      "reference_commit": "9a0f64f3b7ea2d7c8e7524db5c8ef1da8be3e1d1",
+      "source_url": "https://github.com/lance-format/lance/pull/7478",
+      "title": "Incomplete I/O batches fail safely during teardown",
+      "title_zh": "运行时退出时未完成 I/O 的安全失败"
+    },
+    {
+      "base_commit": "90d8e027138948ecf4fa4da57ac049f144a28c82",
+      "instance_id": "lance-pilot-022",
+      "reference_commit": "5d1f9006aee56a4bd727c73caa0f99d2cad77a63",
+      "source_url": "https://github.com/lance-format/lance/pull/8159",
+      "title": "Cache deep-size accounting deduplicates aliases without reentrant deadlock",
+      "title_zh": "缓存共享分配去重和可重入内存计数"
+    },
+    {
+      "base_commit": "4754a761813a911abf2edd7d89404a04ef697a5f",
+      "instance_id": "lance-pilot-023",
+      "reference_commit": "d5bff029eca37357f88381156550f1b9f684a5eb",
+      "source_url": "https://github.com/lance-format/lance/pull/6581",
+      "title": "Merge sliced nested list structures with rebased offsets",
+      "title_zh": "切片嵌套列表合并中的偏移重定位"
+    },
+    {
+      "base_commit": "be55555c6ea7d1fd8dc71f8620574f78e689f230",
+      "instance_id": "lance-pilot-024",
+      "reference_commit": "15bbd4a85b4f41dfb81bace6ecb340f7e619d573",
+      "source_url": "https://github.com/lance-format/lance/pull/7498",
+      "title": "Float conversion retains nested inner nulls and slice windows",
+      "title_zh": "向量浮点转换中的内层 null 与切片窗口"
+    }
+  ],
+  "weights": {
+    "functional": 75,
+    "performance": 25
+  },
+  "private_validation_audit": ".metabench/lance-discriminative-20260930/validation-audit.json",
+  "private_exclusion_evidence": ".metabench/lance-discriminative-20260930/excluded-tasks.json"
+}

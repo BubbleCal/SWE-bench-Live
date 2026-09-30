@@ -1,16 +1,16 @@
-"""Frozen per-checkpoint performance and downstream compatibility evaluation.
+"""Frozen per-checkpoint functional and performance evaluation.
 
 Called only by a VM worker while it holds the machine-wide execution lock.
 All supplied Rust runs inside the offline verifier containers.
 """
 import json
 import math
-import re
 import shlex
 import statistics
 
 from .schema import digest
 from .performance import metric_score, PERFORMANCE_POLICY_ID
+from .scoring import EVALUATION_POLICY_ID, combined_score
 
 
 def checked(workspace, command, *, source=None, timeout=900):
@@ -20,26 +20,21 @@ def checked(workspace, command, *, source=None, timeout=900):
     return result
 
 
-def install(workspace, spec, kind):
+def install(workspace, spec):
     directory = "rust/" + spec["crate"]
-    if kind == "benchmark":
-        path = directory + "/benches/metabench_perf.rs"
-        checked(workspace, "test ! -e " + path)
-        checked(workspace, "mkdir -p " + directory + "/benches")
-        checked(workspace, "cat > " + path, source=spec["benchmark_source"])
-        checked(workspace, "cat >> " + directory + "/Cargo.toml",
-                source='\n[[bench]]\nname = "metabench_perf"\nharness = false\n')
-    else:
-        path = directory + "/tests/metabench_future.rs"
-        checked(workspace, "test ! -e " + path)
-        checked(workspace, "mkdir -p " + directory + "/tests")
-        checked(workspace, "cat > " + path, source=spec["future_source"])
+    path = directory + "/benches/metabench_perf.rs"
+    checked(workspace, "test ! -e " + path)
+    checked(workspace, "mkdir -p " + directory + "/benches")
+    checked(workspace, "cat > " + path, source=spec["benchmark_source"])
+    checked(workspace, "cat >> " + directory + "/Cargo.toml",
+            source='\n[[bench]]\nname = "metabench_perf"\nharness = false\n')
 
 
 def build(workspace, spec):
-    install(workspace, spec, "benchmark")
+    install(workspace, spec)
+    features = " --features " + ",".join(spec["features"]) if spec.get("features") else ""
     result = workspace.command(f"cargo bench --locked --profile release-with-debug -p {spec['crate']} "
-                               "--bench metabench_perf --no-run --message-format=json", 900)
+                               f"--bench metabench_perf --no-run --message-format=json{features}", 900)
     artifacts = []
     for line in result["output"].splitlines():
         try:
@@ -65,30 +60,6 @@ def sample(workspace, binary):
     except (ValueError, KeyError, TypeError):
         valid = False
     return {"valid": valid, "metrics": metrics if valid else [], "execution": result}
-
-
-def future(workspace, spec):
-    if spec.get("future_patch"):
-        applied = workspace.command("git apply --whitespace=nowarn -", 60, spec["future_patch"])
-        if applied["returncode"]:
-            return {"status": "text_conflict_needs_review", "score": None, "patch_execution": applied}
-    if spec.get("future_append"):
-        from .verification import install_in_workspace
-        install_in_workspace(workspace, spec["future_append"])
-    if spec.get("future_lib_filters"):
-        selection = "--lib -- " + " ".join(spec["future_lib_filters"]) + " --test-threads=1"
-    else:
-        install(workspace, spec, "future")
-        selection = "--test metabench_future -- --test-threads=1"
-    result = workspace.command(f"cargo test --locked --profile release-with-debug -p {spec['crate']} " + selection, 900)
-    match = re.search(r"test result: (ok|FAILED)\. (\d+) passed; (\d+) failed; (\d+) ignored;", result["output"])
-    passed, failed, ignored = (map(int, match.groups()[1:]) if match else (0, 0, 0))
-    valid = (match is not None and passed + failed == spec["future_test_count"] and ignored == 0
-             and not result.get("timed_out") and ((failed == 0 and result["returncode"] == 0)
-                                                  or (failed > 0 and result["returncode"] == 101)))
-    return {"status": ("passed" if failed == 0 and result["returncode"] == 0 else "behavior_failed") if valid else "build_or_execution_failed",
-            "score": 100 * passed / spec["future_test_count"] if valid else None,
-            "passed_tests": passed, "failed_tests": failed, "expected_tests": spec["future_test_count"], "execution": result}
 
 
 def performance_scores(pairs, repeats, tolerance):
@@ -123,22 +94,13 @@ def evaluate(root, request, candidate, functional):
     spec = request["task"]["supplemental"]
     reference_request = {**request, "trial_id": digest({"trial": request["trial_id"], "reference": True})[:24]}
     reference = CachedWorkspace(root, reference_request, "verify")
-    evidence = {"protocol": "paired-checkpoint-v1", "performance_policy_id": PERFORMANCE_POLICY_ID,
+    evidence = {"protocol": "paired-checkpoint-v2-functional-performance", "evaluation_policy_id": EVALUATION_POLICY_ID, "performance_policy_id": PERFORMANCE_POLICY_ID,
                 "spec_hash": digest(spec), "pairs": []}
     try:
         checked(reference, "true")
         if reference.restore_source_ownership()["returncode"]:
             raise RuntimeError("reference ownership recovery failed")
         reference.prepare([request["task"]["patch"]])
-        evidence["reference_future"] = future(reference, spec)
-        if evidence["reference_future"]["status"] != "passed":
-            raise RuntimeError("historical reference fails frozen compatibility control")
-        # Historical compatibility patches must never contaminate the timed
-        # reference build. Restore the task's own revision before measuring it.
-        if spec.get("future_patch") or spec.get("future_append"):
-            if reference.restore_source_ownership()["returncode"]:
-                raise RuntimeError("reference ownership recovery failed")
-            reference.prepare([request["task"]["patch"]])
         refbin, evidence["reference_build"] = build(reference, spec)
         if not refbin:
             raise RuntimeError("historical reference performance build failed")
@@ -155,20 +117,16 @@ def evaluate(root, request, candidate, functional):
                     evidence["pairs"].append(pair)
                     if not all(value["valid"] for value in pair.values()):
                         break
-        evidence["future"] = future(candidate, spec)
-        metrics = performance_scores(evidence["pairs"], spec["repeats"], spec["tolerance"])
+        metrics = performance_scores(evidence["pairs"], spec["repeats"], spec.get("tolerance"))
         performance = statistics.mean(m["score"] for m in metrics) if metrics else None
-        future_score = evidence["future"]["score"]
         performance_status = "excluded_incorrect_solution" if not functional["critical_pass"] else ("measured" if metrics else "measurement_failed")
-        scores = {"functional": functional["score"], "performance": performance, "future_evolution": future_score}
-        total = 0.0 if not functional["critical_pass"] else (
-            .6 * scores["functional"] + .2 * performance + .2 * future_score
-            if performance is not None and future_score is not None else None)
+        scores = {"functional": functional["score"], "performance": performance}
+        total = combined_score(scores["functional"], performance, functional["critical_pass"])
         return {**functional, "functional_score": functional["score"], "functional_scores": functional["scores"],
-                "performance_policy_id": PERFORMANCE_POLICY_ID,
+                "performance_policy_id": PERFORMANCE_POLICY_ID, "evaluation_policy_id": EVALUATION_POLICY_ID,
                 "scores": scores, "score": total, "performance_metrics": metrics or [], "performance_status": performance_status,
-                "future_evolution_status": evidence["future"]["status"], "supplemental_evaluation": evidence,
-                "supplemental_status": "needs_review" if future_score is None or performance_status == "measurement_failed" else "scored"}
+                "supplemental_evaluation": evidence,
+                "supplemental_status": "needs_review" if performance_status == "measurement_failed" else "scored"}
     finally:
         ownership = reference.restore_source_ownership()
         stopped = execute(["docker", "stop", "--time", "2", reference.container], timeout=30)
