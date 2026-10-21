@@ -136,9 +136,9 @@ class CachedWorkspace:
         if patch.strip():
             must(["git", "-C", str(self.root), "apply", "--index", "--whitespace=nowarn", "-"], input=patch)
 
-    def prepare(self, patches, verification_append=None):
+    def prepare(self, patches, verification_append=None, *, benchmark=None):
         state_path = self.directory / (self.lane + ".source.json")
-        key = hashlib.sha256(json.dumps([self.base, patches, verification_append]).encode()).hexdigest()
+        key = hashlib.sha256(json.dumps([self.base, patches, verification_append, benchmark]).encode()).hexdigest()
         state = json.loads(state_path.read_text()) if state_path.exists() else {}
         tree = must(["git", "-C", str(self.root), "write-tree"])["output"].strip()
         clean = execute(["git", "-C", str(self.root), "diff", "--quiet"])["returncode"] == 0
@@ -160,10 +160,14 @@ class CachedWorkspace:
                         must(["git", "-C", str(self.root), "apply", "--cached", "--whitespace=nowarn", "-"], input=patch, env=env)
                 if verification_append:
                     append_to_index(self.root, verification_append, env)
+                if benchmark is not None:
+                    from .benchmark_build import install_in_index
+                    install_in_index(self.root, benchmark, env)
                 desired = must(["git", "-C", str(self.root), "write-tree"], env=env)["output"].strip()
             must(["git", "-C", str(self.root), "read-tree", "-m", "-u", tree, desired])
             write(state_path, {"key": key, "tree": desired})
         self.identity["source_reused"] = reused
+        self.identity["source_tree"] = must(["git", "-C", str(self.root), "write-tree"])["output"].strip()
 
     def command(self, command, timeout=1800, input=None):
         variables = {"CARGO_TARGET_DIR": "/build-cache/target", **self.environment.get("env", {})}

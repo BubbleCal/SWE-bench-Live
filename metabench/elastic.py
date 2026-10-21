@@ -101,6 +101,8 @@ def attach(run, specifications, *, max_vms=3, target_wait=180):
     with (run/'elastic.lock').open('a+') as lease:
         fcntl.flock(lease, fcntl.LOCK_EX | fcntl.LOCK_NB)
         manifest = json.loads((run/'run.json').read_text())
+        if manifest.get('worker_pools', {}).get('separate'):
+            raise ValueError('elastic trial-wide routing cannot change separate public/grading pools; configure both inventories before the run')
         original = manifest['matrix']['vms'][:manifest['vm_count']]
         new = specifications[:max_vms-len(original)]
         all_vms = [*original, *new]

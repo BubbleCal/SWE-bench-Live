@@ -4,6 +4,9 @@ Generate and freeze benchmark tasks from a repository's history, then compare
 native coding agents on functionality and performance.
 Each model / effort / issue has a private worktree and a persistent CLI session.
 Every round is scored through a VM queue while the next round begins.
+GPT benchmarks resolve the model's maximum context from the authenticated native
+CLI catalog and explicitly use Standard service with Fast mode off. Settings are
+recorded with the run and retained when resuming it.
 
 Meta-bench is an independent Python project. [SWE-bench-Live](https://github.com/microsoft/SWE-bench-Live)
 is an unmodified, commit-pinned **source dependency**, isolated behind
@@ -78,6 +81,11 @@ All custom behavior belongs in our adapter or our modules.
 
 ## Local results
 
+Native runs support [separate public and grading worker pools](examples/metabench/native-split-pools.json).
+The evaluator retains independent functional/performance workspaces, verifies cached
+benchmark binaries before reuse, and skips performance work for failing candidates.
+Paired timing samples remain fresh. See [worker configuration and cache behavior](MetaBench.md#native-agents-and-vm-scheduling).
+
 Serve any saved JSONL report without an upstream checkout:
 
 ```sh
@@ -88,18 +96,30 @@ Performance uses a symmetric relative score: reference parity=50, 2x faster=66.6
 2x slower=33.33. Use `metabench rescore-performance results.jsonl --out rescored.jsonl`
 to apply it to archived paired timings, preserving original receipts.
 
-The active Lance task set is `benchmarks/lance/current.json`: issue 004 is retained,
-issues 001–003 and 005–015 are excluded based on all 32 observed functional checkpoints
-passing, and nine new historical regression tasks (016–024) replace them.
-Private candidates, validations and the frozen suite live in
-`.metabench/lance-discriminative-20260930/`. New tasks have no model scores until run.
+The active Lance task set is `benchmarks/lance/current.json`: **004, 017, 018,
+024, 025, 026 and 029**. The six-configuration, four-round results show functional,
+material performance, or first-round completion differences on these seven tasks.
+Task 025 is retained for first-round compilation/completion differences even though
+all configurations pass from round two. Tasks 022 and 028 have negligible observed
+separation, and 027 has weak separation; they join the previous exclusions.
+
+The canonical seven-task suite, matching environments and selection evidence are
+under `.metabench/lance-selected7-20261008/`. Task definitions and their existing
+base/reference validation receipts are unchanged. The current dashboard filters
+the completed ten-task comparison to **168 checkpoints** (7 tasks × 6 configurations
+× 4 rounds) and recomputes aggregates over those tasks. Original comparison suite
+and configuration IDs remain attached to the score rows; this selection does not
+claim a new model run under the seven-task suite ID.
 The current dashboard shows functional and performance only; the total is 75% functional
 and 25% performance, gated to zero by a critical functional failure.
 
 The previous 480 checkpoint receipts and original three-dimension protocol remain
 archived under `.metabench/gpt61-sol-20260930/results/` and are not rewritten.
-The current view explicitly labels retained historical issue 004 results and leaves
-untested new tasks as gaps. It defaults to 004 so retained results remain inspectable.
+The complete 240-point ten-task snapshot from before this selection is preserved in
+`.metabench/lance-selected7-20261008/previous-dashboard/`. Earlier snapshots under
+`.metabench/lance-next5-20261001/previous-dashboard/`, the audited new9 receipts under
+`.metabench/lance-new9-20261001/`, and the Sol/Astra/Opus native-run receipts remain intact.
+Missing model results must remain unscored, never inferred from reference controls.
 
 ## Development
 

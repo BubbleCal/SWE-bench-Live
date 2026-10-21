@@ -14,30 +14,39 @@
     "lance-pilot-012",
     "lance-pilot-013",
     "lance-pilot-014",
-    "lance-pilot-015"
-  ],
-  "exclusion_basis": "all 32 observed functional checkpoints passed for each excluded task; performance discrimination is not the exclusion criterion",
-  "name": "lance-discriminative10",
-  "new_task_ids": [
+    "lance-pilot-015",
     "lance-pilot-016",
-    "lance-pilot-017",
-    "lance-pilot-018",
     "lance-pilot-019",
     "lance-pilot-020",
     "lance-pilot-021",
     "lance-pilot-022",
     "lance-pilot-023",
-    "lance-pilot-024"
+    "lance-pilot-027",
+    "lance-pilot-028"
+  ],
+  "exclusion_basis": "After all six configurations completed four rounds, remove 022/028 for negligible separation and 027 for weak separation. Retain functional, material runtime, and first-round completion differences; 025 remains for first-round differentiation.",
+  "name": "lance-selected7",
+  "new_task_ids": [
+    "lance-pilot-025",
+    "lance-pilot-026",
+    "lance-pilot-029"
   ],
   "performance_policy_id": "relative-latency-v2",
-  "private_candidates": ".metabench/lance-discriminative-20260930/candidates.json",
-  "private_environments": ".metabench/lance-discriminative-20260930/environments.json",
-  "private_suite": ".metabench/lance-discriminative-20260930/suite.json",
+  "private_cache_ami": ".metabench/lance-next5-20261001/cache-ami.json",
+  "private_candidates": ".metabench/lance-selected7-20261008/candidates.json",
+  "private_environments": ".metabench/lance-selected7-20261008/environments.json",
+  "private_exclusion_evidence": ".metabench/lance-selected7-20261008/selection-audit.json",
+  "private_public_tasks": ".metabench/lance-selected7-20261008/public-tasks.json",
+  "private_suite": ".metabench/lance-selected7-20261008/suite.json",
+  "private_validation_audit": ".metabench/lance-selected7-20261008/validation-audit.json",
   "retained_task_ids": [
-    "lance-pilot-004"
+    "lance-pilot-004",
+    "lance-pilot-017",
+    "lance-pilot-018",
+    "lance-pilot-024"
   ],
   "status": "ready",
-  "suite_id": "f729bf4218a292eb9128f0ffd45412ce976df73ee38d7375c317b90aa9b80500",
+  "suite_id": "381fcb06ce6bf50fba6d819025d2291a65f15cd7f2f158371176c6be0d5206d3",
   "tasks": [
     {
       "base_commit": "bea84ccb43845db19c948b28badaf3de9d51c25d",
@@ -45,15 +54,7 @@
       "reference_commit": "ff11c08f98099ae4959381354a6e595269c63324",
       "source_url": "https://github.com/lance-format/lance/pull/9048",
       "title": "Preserve sliced-array values and release oversized source buffers",
-      "title_zh": "切片拷贝的偏移错误与单行内存保留"
-    },
-    {
-      "base_commit": "93ba1d20c78c17693a7f02ab787b6cefbd1bec89",
-      "instance_id": "lance-pilot-016",
-      "reference_commit": "f1f3e4317dc78413d411a1f495de8157e2c8bdf1",
-      "source_url": "https://github.com/lance-format/lance/pull/8677",
-      "title": "Typed errors survive shared ownership and ReplayExec fan-out",
-      "title_zh": "共享所有权和 ReplayExec 的错误类型保留"
+      "title_zh": "\u5207\u7247\u62f7\u8d1d\u7684\u504f\u79fb\u9519\u8bef\u4e0e\u5355\u884c\u5185\u5b58\u4fdd\u7559"
     },
     {
       "base_commit": "264f1762c9495f3728e2d592183e491a09b96780",
@@ -61,7 +62,7 @@
       "reference_commit": "bb3a485e7561619008a94371c892554799826752",
       "source_url": "https://github.com/lance-format/lance/pull/9510",
       "title": "SharedStream survives a cancelled half without leaked buffers",
-      "title_zh": "共享流取消后的进度与资源释放"
+      "title_zh": "\u5171\u4eab\u6d41\u53d6\u6d88\u540e\u7684\u8fdb\u5ea6\u4e0e\u8d44\u6e90\u91ca\u653e"
     },
     {
       "base_commit": "d57d0fb426209e350011ef7fdfd086c9a6a38942",
@@ -69,47 +70,7 @@
       "reference_commit": "9c99a393715c2d3a7a1b60124477fae7ac0c4240",
       "source_url": "https://github.com/lance-format/lance/pull/8929",
       "title": "Compare minimal and complete logical Blob v2 schemas semantically",
-      "title_zh": "Blob v2 最小和完整逻辑 schema 的语义比较"
-    },
-    {
-      "base_commit": "5dbd1400dc4457013aabd5c0eb1714c12acf5b77",
-      "instance_id": "lance-pilot-019",
-      "reference_commit": "0bdf0a1ce4f610d337203a2e28b0f934847e1a9b",
-      "source_url": "https://github.com/lance-format/lance/pull/7638",
-      "title": "Cancelled reads return scheduler backpressure reservations",
-      "title_zh": "取消读取后的调度器背压额度归还"
-    },
-    {
-      "base_commit": "f24e42c11a742581365e1cbe17c906ea2dac1bc6",
-      "instance_id": "lance-pilot-020",
-      "reference_commit": "4f39296e7d7e7bb8444f70caa3a09014de6af4cf",
-      "source_url": "https://github.com/lance-format/lance/pull/7588",
-      "title": "Same-priority chunks resume after a higher-priority read",
-      "title_zh": "同优先级分块请求的抢占恢复与死锁"
-    },
-    {
-      "base_commit": "63aea116831ea4996d506342a38dc7c3aba31725",
-      "instance_id": "lance-pilot-021",
-      "reference_commit": "9a0f64f3b7ea2d7c8e7524db5c8ef1da8be3e1d1",
-      "source_url": "https://github.com/lance-format/lance/pull/7478",
-      "title": "Incomplete I/O batches fail safely during teardown",
-      "title_zh": "运行时退出时未完成 I/O 的安全失败"
-    },
-    {
-      "base_commit": "90d8e027138948ecf4fa4da57ac049f144a28c82",
-      "instance_id": "lance-pilot-022",
-      "reference_commit": "5d1f9006aee56a4bd727c73caa0f99d2cad77a63",
-      "source_url": "https://github.com/lance-format/lance/pull/8159",
-      "title": "Cache deep-size accounting deduplicates aliases without reentrant deadlock",
-      "title_zh": "缓存共享分配去重和可重入内存计数"
-    },
-    {
-      "base_commit": "4754a761813a911abf2edd7d89404a04ef697a5f",
-      "instance_id": "lance-pilot-023",
-      "reference_commit": "d5bff029eca37357f88381156550f1b9f684a5eb",
-      "source_url": "https://github.com/lance-format/lance/pull/6581",
-      "title": "Merge sliced nested list structures with rebased offsets",
-      "title_zh": "切片嵌套列表合并中的偏移重定位"
+      "title_zh": "Blob v2 \u6700\u5c0f\u548c\u5b8c\u6574\u903b\u8f91 schema \u7684\u8bed\u4e49\u6bd4\u8f83"
     },
     {
       "base_commit": "be55555c6ea7d1fd8dc71f8620574f78e689f230",
@@ -117,13 +78,59 @@
       "reference_commit": "15bbd4a85b4f41dfb81bace6ecb340f7e619d573",
       "source_url": "https://github.com/lance-format/lance/pull/7498",
       "title": "Float conversion retains nested inner nulls and slice windows",
-      "title_zh": "向量浮点转换中的内层 null 与切片窗口"
+      "title_zh": "\u5411\u91cf\u6d6e\u70b9\u8f6c\u6362\u4e2d\u7684\u5185\u5c42 null \u4e0e\u5207\u7247\u7a97\u53e3"
+    },
+    {
+      "base_commit": "d45b546510e9c8b5f4052991f80c555bb4edda97",
+      "instance_id": "lance-pilot-025",
+      "reference_commit": "acb2b944e2885c19097b717307356e1dc3c671f5",
+      "source_url": "https://github.com/lance-format/lance/pull/9469",
+      "title": "Preserve global exact-KNN order through late materialization",
+      "title_zh": "\u5ef6\u8fdf\u7269\u5316\u540e\u7684\u5168\u5c40 KNN \u6392\u5e8f\u4e0e\u5206\u9875"
+    },
+    {
+      "base_commit": "92968f09178eae48fac6110c0dcc9180db97ade7",
+      "instance_id": "lance-pilot-026",
+      "reference_commit": "00a8230ba21341966cb3edac17b475b7b9219302",
+      "source_url": "https://github.com/lance-format/lance/pull/9452",
+      "title": "Keep RaBitQ dot scores and top-k invariant under query scaling",
+      "title_zh": "RaBitQ \u70b9\u79ef\u7f29\u653e\u4e00\u81f4\u6027\u3001\u526a\u679d\u4e0e\u6570\u503c\u8fb9\u754c"
+    },
+    {
+      "base_commit": "38b7295a7b65296bfa8b678dacbfa76a1dd783bf",
+      "instance_id": "lance-pilot-029",
+      "reference_commit": "477222122244438e1114e6fbd891b890fd91d71d",
+      "source_url": "https://github.com/lance-format/lance/pull/9226",
+      "title": "Read and compact evolved nested structs from older data-file versions",
+      "title_zh": "\u65e7\u683c\u5f0f\u5d4c\u5957 Struct \u7684 schema \u6f14\u5316\u4e0e\u538b\u5b9e"
     }
   ],
   "weights": {
     "functional": 75,
     "performance": 25
   },
-  "private_validation_audit": ".metabench/lance-discriminative-20260930/validation-audit.json",
-  "private_exclusion_evidence": ".metabench/lance-discriminative-20260930/excluded-tasks.json"
+  "selection_date": "2026-10-08",
+  "selected_task_ids": [
+    "lance-pilot-004",
+    "lance-pilot-017",
+    "lance-pilot-018",
+    "lance-pilot-024",
+    "lance-pilot-025",
+    "lance-pilot-026",
+    "lance-pilot-029"
+  ],
+  "selection_reasons": {
+    "lance-pilot-004": "Final functional outcomes differ across configurations on nested Arrow offsets.",
+    "lance-pilot-017": "All pass functionally; meaningful shared-stream runtime differences remain.",
+    "lance-pilot-018": "All pass functionally; large schema-comparison runtime differences remain.",
+    "lance-pilot-024": "All pass functionally; large floating-conversion runtime differences remain.",
+    "lance-pilot-025": "Retain first-round completion differences: two configurations initially fail to compile, then recover.",
+    "lance-pilot-026": "Retain first-round compilation differences and material final bulk-scoring runtime differences.",
+    "lance-pilot-029": "Final file-schema API correctness differs across models.",
+    "lance-pilot-022": "All functional checkpoints pass; final performance differences are small.",
+    "lance-pilot-027": "All functional checkpoints pass; observed performance separation is weak relative to retained tasks.",
+    "lance-pilot-028": "All functional checkpoints pass; final performance differences are negligible."
+  },
+  "source_suite_id": "e40e044ecc5a488b14bd3e7fcf63b4e432c382db8737f2429c75134df7aa7f9c",
+  "cache_source_suite_id": "e40e044ecc5a488b14bd3e7fcf63b4e432c382db8737f2429c75134df7aa7f9c"
 }

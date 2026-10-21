@@ -19,6 +19,7 @@
   <div class="toolbar"><label>Task<br><select id="task" aria-label="Task"><option value="">All tasks</option></select></label><label class="switch"><input id="zoom-performance" type="checkbox" checked>Zoom performance</label><label class="switch"><input id="auto" type="checkbox" checked>Auto · 5s</label><button id="refresh" type="button">Refresh</button><button id="download" type="button">Export</button></div>
   <div id="models" class="models" aria-label="Visible model configurations"></div>
   <div id="progress" class="progress" aria-live="polite"></div>
+  <p id="report-note" class="note" hidden></p>
   <details id="task-details" hidden><summary>Problem</summary><p id="task-problem" style="white-space:pre-wrap;margin:10px 0 16px"></p></details>
   <section id="charts" class="charts" aria-label="One chart per score dimension"></section>
   <section class="details"><div class="round-control"><h2 style="margin:0">Round <span id="round-value">5</span></h2><input type="range" id="round" min="1" max="5" value="5" aria-label="Inspect round"></div><div class="table-wrap"><table><thead><tr id="table-head"></tr></thead><tbody id="table-body"></tbody></table></div></section>
@@ -31,7 +32,7 @@
   'use strict';
   const boot=JSON.parse(document.getElementById('metabench-data').textContent);
   let data=boot.data, busy=false, poll=null, selected=new Set(), selectedTask='', zoomPerformance=true, round=Math.max(...data.steps,1);
-  const $=id=>document.getElementById(id), ns='http://www.w3.org/2000/svg', storageKey='metabench:'+data.suite_id;
+  const $=id=>document.getElementById(id), ns='http://www.w3.org/2000/svg', storageKey='metabench:'+data.suite_id+(data.metadata.view_id?':'+data.metadata.view_id:'');
   const dashed=['','7 4','2 4'], metricNames={functional:'Functional',performance:'Performance'};
   const fmt=n=>n==null?'Pending':Number(n).toFixed(2), integer=n=>Number(n).toLocaleString();
   const text=(tag,value,className)=>{const n=document.createElement(tag);n.textContent=value;if(className)n.className=className;return n;};
@@ -39,8 +40,10 @@
   const style=s=>({color:'var(--c'+(data.series.indexOf(s)%7)+')',dash:dashed[Math.max(0,['high','xhigh','max'].indexOf(s.reasoning))%3]});
   function restore(){try{const old=JSON.parse(localStorage.getItem(storageKey));selected=new Set(old?old.selected:data.series.map(s=>s.config_id));selectedTask=old?.task??data.metadata.default_task??'';round=old?.round||round;zoomPerformance=old?.zoomPerformance??true;}catch{selected=new Set(data.series.map(s=>s.config_id));}}
   function save(){try{localStorage.setItem(storageKey,JSON.stringify({selected:[...selected],task:selectedTask,round,zoomPerformance}));}catch{}}
-  function dimensions(){return selectedTask?(data.task_charts[selectedTask]||[]):data.charts;}
-  function point(chart,id,step){return chart?.points[id]?.find(p=>p.step===step)||{step,score:null,scored_tasks:0,applicable_tasks:chart?(selectedTask?1:data.tasks.length):0,missing_tasks:[],excluded_tasks:[]};}
+  function taskGroup(){return data.task_groups?.find(g=>g.id===selectedTask);}
+  function scopeTasks(){return taskGroup()?.task_ids||(selectedTask?[selectedTask]:data.tasks);}
+  function dimensions(){return taskGroup()?.charts||(selectedTask?(data.task_charts[selectedTask]||[]):data.charts);}
+  function point(chart,id,step){return chart?.points[id]?.find(p=>p.step===step)||{step,score:null,scored_tasks:0,applicable_tasks:scopeTasks().length,missing_tasks:scopeTasks(),excluded_tasks:[]};}
   function labelPoint(p){if(p.score!=null)return fmt(p.score);if(!p.applicable_tasks)return 'Not applicable';if(!p.missing_tasks?.length&&p.excluded_tasks?.length===p.applicable_tasks)return 'Excluded';return 'Pending';}
   function coverage(p){return p.scored_tasks+'/'+p.applicable_tasks+' scored'+(p.excluded_tasks?.length?' · '+p.excluded_tasks.length+' excluded':'');}
   function shortLabel(s){
@@ -71,7 +74,9 @@
     $('title').textContent=data.metadata.title||'Meta-bench';
     $('subtitle').textContent=data.series.length+' configs · '+data.tasks.length+' tasks · '+data.steps.length+' rounds';
     const task=$('task');task.replaceChildren(text('option','All tasks'));task.firstChild.value='';
-    for(const name of data.tasks){const title=data.metadata.task_titles?.[name],o=text('option',title?name+' · '+title:name);o.value=name;task.append(o);}if(!data.tasks.includes(selectedTask))selectedTask='';task.value=selectedTask;
+    for(const group of data.task_groups||[]){const o=text('option',group.label);o.value=group.id;task.append(o);}
+    for(const name of data.tasks){const title=data.metadata.task_titles?.[name],o=text('option',title?name+' · '+title:name);o.value=name;task.append(o);}if(!data.tasks.includes(selectedTask)&&!taskGroup())selectedTask='';task.value=selectedTask;
+    $('report-note').textContent=data.metadata.note||'';$('report-note').hidden=!data.metadata.note;
     $('models').replaceChildren();
     for(const model of [...new Set(data.series.map(s=>s.model))]){
       const field=document.createElement('fieldset');field.append(text('legend',model));const choices=text('div','','choices');
@@ -169,14 +174,14 @@
       const row=document.createElement('tr');row.dataset.series=s.config_id;row.append(text('td',s.label,'model-cell'));
       row.addEventListener('pointerenter',()=>highlightSeries(s.config_id));row.addEventListener('pointerleave',()=>highlightSeries(null));
       for(const base of data.charts){const chart=dimensions().find(c=>c.dimension===base.dimension),p=point(chart,s.config_id,round),cell=text('td',labelPoint(p));cell.append(text('small',coverage(p)));row.append(cell);}
-      const rs=data.rows.filter(r=>r.config_id===s.config_id&&r.step===round&&(!selectedTask||r.task_id===selectedTask));
+      const scope=scopeTasks(),rs=data.rows.filter(r=>r.config_id===s.config_id&&r.step===round&&scope.includes(r.task_id));
       let total=0,unknown=rs.length===0;const tasks=new Set(rs.map(r=>r.task_id));
       for(const r of rs){const known=r.usage?.total_tokens;if(known!=null)total+=known;else{unknown=true;total+=r.observed_usage_lower_bound?.total_tokens||0;}}
-      const expectedRepeats=new Set(data.rows.filter(r=>r.config_id===s.config_id&&(!selectedTask||r.task_id===selectedTask)).map(r=>r.task_id+':'+(r.repeat||0)));
+      const expectedRepeats=new Set(data.rows.filter(r=>r.config_id===s.config_id&&scope.includes(r.task_id)).map(r=>r.task_id+':'+(r.repeat||0)));
       const observedRepeats=new Set(rs.map(r=>r.task_id+':'+(r.repeat||0)));
-      unknown ||= tasks.size<(selectedTask?1:data.tasks.length)||observedRepeats.size<expectedRepeats.size;const cell=text('td',!total&&unknown?'Pending':(unknown?'≥ ':'')+integer(total));cell.append(text('small',tasks.size+'/'+(selectedTask?1:data.tasks.length)));row.append(cell);$('table-body').append(row);
+      unknown ||= tasks.size<scope.length||observedRepeats.size<expectedRepeats.size;const cell=text('td',!total&&unknown?'Pending':(unknown?'≥ ':'')+integer(total));cell.append(text('small',tasks.size+'/'+scope.length));row.append(cell);$('table-body').append(row);
       if(hasTiming)for(const field of ['active_seconds','queue_wait_seconds','wall_seconds']){
-        const values=rs.map(r=>r[field]);const complete=values.length>0&&values.every(Number.isFinite)&&observedRepeats.size===expectedRepeats.size;
+        const values=rs.map(r=>r[field]);const complete=values.length>0&&tasks.size===scope.length&&values.every(Number.isFinite)&&observedRepeats.size===expectedRepeats.size;
         const timeCell=text('td',complete?(values.reduce((a,b)=>a+b,0)/values.length/60).toFixed(1)+' min':'Pending');
         timeCell.title='Mean cumulative per trial';row.append(timeCell);
       }

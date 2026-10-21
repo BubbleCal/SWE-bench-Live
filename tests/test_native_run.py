@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 from metabench.checkouts import git
 from metabench.evaluate import evaluate, validate
-from metabench.native_run import run_matrix
+from metabench.native_run import CONTINUE, run_matrix
 from metabench.schema import freeze, task_fingerprint
 from metabench.test_mcp import request
 from metabench.queue import TestQueue
@@ -36,10 +36,11 @@ class NativeMatrixTest(unittest.TestCase):
             task['validation']['environment']={'backend':'docker','score_eligible':True}
             second=copy.deepcopy(task);second['instance_id']='issue-b';second['validation']['task_hash']=task_fingerprint(second)
             suite=freeze([task,second]);matrix={'agents':[
-                {'provider':'codex','model':'control-a','reasoning':'high'},
+                {'provider':'codex','model':'gpt-control-a','reasoning':'high'},
                 {'provider':'claude','model':'control-b','reasoning':'high'}],
                 'vms':[{'id':'vm-a'},{'id':'vm-b'}]}
             control_lock=threading.Lock();calls=[];sessions={};rounds={};running=[0,0];prepared=[];second_started={};staged=[]
+            active_spec={};peak_spec={}
             increment=normalize({'input_tokens':10,'cached_input_tokens':4,'cache_write_input_tokens':0,
                                  'output_tokens':5,'reasoning_output_tokens':2})
 
@@ -59,14 +60,26 @@ class NativeMatrixTest(unittest.TestCase):
 
             def native(spec,worktree,prompt,out,**options):
                 self.assertEqual(options['timeout'],900)
+                if spec['provider']=='codex':
+                    self.assertEqual(spec['model_policy']['context_window'],1000)
+                    self.assertEqual(spec['model_policy']['service_tier'],'default')
+                    self.assertFalse(spec['model_policy']['fast_mode'])
                 step=rounds.get(str(worktree),0)+1;rounds[str(worktree)]=step
                 self.assertEqual(set(prepared),{'vm-a','vm-b'})
                 self.assertEqual(len(staged),4)
                 self.assertEqual(len({archive for _,archive in staged}),1)
                 self.assertNotIn('HIDDEN_MARKER',prompt)
                 self.assertNotIn('critical_pass',prompt)
+                if step == 1:
+                    self.assertIn('pinned dependencies',prompt)
+                else:
+                    self.assertIn('counterexample',prompt)
+                    self.assertIn('independently of the implementation',prompt)
+                    self.assertIn(f'Conversation round {step}/4.',prompt)
                 with control_lock:
                     running[0]+=1;running[1]=max(running);calls.append((str(worktree),options['session_id']))
+                    active_spec[spec['model']]=active_spec.get(spec['model'],0)+1
+                    peak_spec[spec['model']]=max(peak_spec.get(spec['model'],0),active_spec[spec['model']])
                 try:
                     time.sleep(.03)
                     if options['session_id'] is None:
@@ -75,7 +88,7 @@ class NativeMatrixTest(unittest.TestCase):
                     else:
                         first=json.loads((worktree.parent.parent/'checkpoint-1.json').read_text())
                         second_started.setdefault(first['trial_id'],threading.Event()).set()
-                        queued=TestQueue(root/'run/queue.sqlite').for_trial(first['trial_id'],'verify')
+                        queued=TestQueue(worktree.parents[3]/'queue.sqlite').for_trial(first['trial_id'],'verify')
                         self.assertTrue(queued, 'round 1 must be queued before round 2 starts')
                         original=next(j for j in queued if j['payload']['patch']=='')
                         self.assertNotIn('return a+b',original['payload']['patch'])
@@ -92,19 +105,29 @@ class NativeMatrixTest(unittest.TestCase):
                     return {'session_id':sessions[str(worktree)],'usage':increment,'status':'submitted','seconds':.1,
                             'provider':{'session_usage':cumulative} if spec['provider']=='codex' else {}}
                 finally:
-                    with control_lock:running[0]-=1
+                    with control_lock:
+                        running[0]-=1
+                        active_spec[spec['model']]-=1
 
             out=root/'run'
-            with patch('metabench.native_run.cli_identity',return_value={'version':'control'}):
+            catalog={'models':[{'slug':'gpt-control-a','context_window':100,'max_context_window':1000,'effective_context_window_percent':95}]}
+            with patch('metabench.native_run.cli_identity',return_value={'version':'control'}), patch('metabench.model_policy.fetch_catalog',return_value=catalog) as fetch:
                 rows=run_matrix(suite,repo,env,matrix,out,parallel=4,driver_factory=Driver,agent_runner=native)
                 self.assertEqual(len(rows),16);self.assertEqual(len(sessions),4);self.assertGreater(running[1],1)
                 for step in range(1,5):self.assertEqual({r['score'] for r in rows if r['step']==step},{0 if step==1 else 100})
                 self.assertEqual({r['usage']['total_tokens'] for r in rows if r['step']==4},{60})
                 self.assertTrue((out/'report.html').exists())
+                self.assertEqual(json.loads((out/'run.json').read_text())['continuation_prompt'],CONTINUE)
+                self.assertEqual(fetch.call_count,1)
+                fetch.return_value={'models':[{**catalog['models'][0],'max_context_window':3000}]}
                 resumed=run_matrix(suite,repo,env,matrix,out,parallel=4,resume=True,driver_factory=Driver,agent_runner=native)
+                self.assertEqual(fetch.call_count,1, 'resume must preserve the original catalog decision')
                 self.assertEqual(len(calls),16);self.assertEqual(len(resumed),16)
                 with self.assertRaisesRegex(ValueError,'configuration changed'):
                     run_matrix(suite,repo,env,matrix,out,parallel=1,resume=True,driver_factory=Driver,agent_runner=native)
+                with patch('metabench.native_run.CONTINUE',CONTINUE+' Changed review instructions.'):
+                    with self.assertRaisesRegex(ValueError,'configuration changed'):
+                        run_matrix(suite,repo,env,matrix,out,parallel=4,resume=True,driver_factory=Driver,agent_runner=native)
                 class UnavailableDriver(Driver):
                     def stage_base(self,base):raise RuntimeError('asset transport unavailable')
                 with self.assertRaisesRegex(RuntimeError,'asset transport unavailable'):
@@ -112,6 +135,15 @@ class NativeMatrixTest(unittest.TestCase):
                 self.assertEqual(len(calls),16)
                 self.assertEqual(json.loads((root/'failed-preflight/run.json').read_text())['status'],'Preflight failed')
                 self.assertFalse(list((root/'failed-preflight/trials').glob('*/turn-*')))
+                calls.clear();sessions.clear();rounds.clear();prepared.clear();second_started.clear();staged.clear()
+                active_spec.clear();peak_spec.clear();running[:]=[0,0];fetch.return_value=catalog
+                limited={**matrix,'max_parallel_agents_per_vm':1}
+                bounded=run_matrix(suite,repo,env,limited,root/'bounded',parallel=4,driver_factory=Driver,agent_runner=native)
+                self.assertEqual(len(bounded),16)
+                self.assertEqual(json.loads((root/'bounded/run.json').read_text())['status'],'Complete')
+                self.assertEqual(len(calls),16)
+                self.assertEqual(running[1],2)
+                self.assertEqual(peak_spec,{'gpt-control-a':1,'control-b':1})
 
 
 if __name__=='__main__':unittest.main()

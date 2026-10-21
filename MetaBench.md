@@ -35,6 +35,26 @@ No placeholder score is assigned to an unsupported dimension. The native runner 
 
 Each turn and checkpoint records `active_seconds`, `queue_wait_seconds`, and `wall_seconds`; checkpoint values are cumulative for that trial. An executing public test remains charged even if the same trial has another request queued. This is an elapsed-time budget, not a measurement of model inference CPU time; work the native CLI overlaps with a queue wait is not separately attributable. The dashboard shows mean cumulative times per trial, not campaign elapsed time. Token counters remain observations. The separate `queue_timeout_seconds` infrastructure watchdog defaults to 7200 seconds per round: exceeding it is an infrastructure error, never model failure. It can be explicitly set to `null`. VM acquisition is reported live and mapped from remote elapsed duration to controller time, so VM lock contention is excluded before the command finishes.
 
+GPT models run through Codex with their **maximum advertised context window** and
+**Explicit service selection (Standard by default)**. At the start of a new run, the controller
+queries `codex debug models` using the selected native CLI and resolves each GPT
+model's `max_context_window`; it never substitutes the smaller `context_window`
+default or a hardcoded API limit. Missing maximum/effective-context metadata is a
+preflight error. The CLI's advertised effective-context percentage determines the
+usable window and auto-compaction threshold. Both the full window and compaction
+threshold are passed explicitly on initial and resumed turns. GPT agent entries
+default to `fast_mode: false`, which selects `service_tier="default"` and
+`features.fast_mode=false`. Set `fast_mode: true` on an individual agent to select
+`service_tier="fast"` and `features.fast_mode=true`; other agents retain their
+own settings. Fast availability must be verified in the native preflight for the
+selected model/account. These overrides come after extra arguments, so user
+settings cannot silently change the chosen service mode or reduce the context.
+The resolved catalog fields and service policy are frozen into the
+run manifest, CLI invocations and checkpoints; resuming an existing run keeps its
+original settings, including Fast mode. Standard and Fast policies have distinct
+policy IDs; changing the requested mode on a frozen session is rejected. Claude
+configurations are unaffected. See the official [Fast mode configuration](https://learn.chatgpt.com/docs/agent-configuration/speed#fast-mode).
+
 ## Setup
 
 Use Python 3.12+, Git and SSH on the controller (macOS/Linux). Test VMs need Linux,
@@ -211,6 +231,25 @@ release their agent slots immediately while grading continues in the separate VM
 Each trial has stable VM affinity so its compiler cache stays warm. Different VMs can
 execute tests concurrently; tests assigned to the same VM are FIFO and exclusive.
 
+To keep hidden grading from blocking public tests, use
+[native-split-pools.json](examples/metabench/native-split-pools.json). `vms` and
+`vm_count` select the public-test pool; `grading_vms` and `grading_vm_count` select
+the independent hidden-grading pool. `--grading-vm-count N` overrides the latter
+count. Omitting `grading_vms` retains the single-pool behavior. Both pools must use
+distinct VM identities and physical hosts, with matching hardware, images and
+container limits. Both inventories and all required base archives pass preflight
+before any model call. These options select already-provisioned machines; they
+never provision cloud resources.
+
+Public-test capabilities can access only public results, including when a hidden
+job belongs to the same trial. Each pool rejects jobs of the wrong kind. The run
+manifest freezes `worker_pools` and the checkpoint execution policy; each row
+records `public_vm_id` and `grading_vm_id`, with `vm_id` identifying the VM that
+actually graded it. Active budgets still exclude public queue/lock waits and charge
+actual public-test execution. Performance reference/candidate samples remain paired
+on the same grading VM under its global execution lock. Both pools drain all
+requested jobs before normal completion.
+
 For an already running campaign, attach additional prepared VMs without restarting
 native sessions:
 
@@ -230,6 +269,8 @@ can consume the new workers' receipts without loading new agent-loop code.
 adapter hash; the initial run manifest is retained. Compare execution intervals per
 VM after scaling, and disclose changed concurrency when interpreting results. An
 uncertain remote job stays fenced. No VM is automatically stopped or deleted.
+The legacy elastic adapter routes every job of a trial together and therefore
+refuses split-pool runs; choose both pool sizes before starting such a run.
 
 Local layout:
 
@@ -244,10 +285,28 @@ run/
     checkpoint-1.json, step-1.patch, score-1.json
 ```
 
-The controller calls `codex exec` or `claude -p` once per conversation round. The CLI
+The controller calls `codex exec`, `claude -p`, or `dsh --profile headless --json`
+once per conversation round. The CLI
 reads/edits code and performs its own tool calls; no command-action JSON loop runs in
 metabench. Later rounds resume the exact saved session ID, never `--last` or `--continue`.
-A fixed self-review prompt starts each additional round without revealing hidden scores.
+DSH matrices use `provider: "dsh"`, an explicit native `command`, `dsh_home`, and
+a JSON `dsh_patch` overlay whose `agent-default-model` entry selects the exact
+model and reasoning effort. Pin the overlay with `dsh_patch_sha256`; changing it
+then fails before inference. The runner converts the trial's MCP configuration
+into a strict DSH client entry and resumes with `--session-id`. DSH step usage is
+invocation-scoped and includes its native retries. Its uncached `inputTokens`
+plus cache reads/writes become total input tokens; reasoning remains part of
+output unless the native stream reports a separate counter. Missing usage stays
+unknown, including interrupted steps.
+A fixed review prompt starts each additional round without revealing hidden scores.
+It asks the agent to verify a consequential unproven correctness assumption against
+the pinned dependency implementation or a minimal executable probe, try a counterexample
+from the public contract, and derive expected results independently of the implementation.
+Distinct valid input constructions and operation compositions guide the review;
+unchanged passing checks are not new evidence. Once the relevant assumptions are
+supported, the agent may finish without inventing defects or repeating checks.
+The exact continuation prompt is frozen in the run manifest and participates in
+the configuration identity, so changing it cannot silently alter a resumed run.
 Before starting any model, the controller creates the private worktrees and stages
 checksum-verified base archives on all assigned VMs. Trials with the same base reuse
 immutable archive bytes, while retaining separate Git object databases. Transfer
@@ -267,8 +326,23 @@ container filesystems, preventing hidden test objects from entering a reused pub
 Unchanged patch hashes share the same durable job, but a previously perfect score never
 skips verification of a changed patch. On resume, ungraded saved checkpoints are queued
 again with the same job identity. The run manifest records `checkpoint-pipeline-v1` as
-its evaluation schedule. Grading competes with public tests in the same FIFO queue;
-those waits increase recorded wall time but do not consume the active answer budget.
+its evaluation schedule. In single-pool mode, grading competes with public tests in
+the same FIFO queue; those waits increase recorded wall time but do not consume the
+active answer budget. Split-pool mode removes that shared-VM contention.
+
+Set `max_parallel_agents_per_vm: 1` together with `parallel_agents` to keep one
+active model trial per public-test VM. The scheduler fills available VM slots without
+starting a second trial on a busy VM. Checkpoint grading remains pipelined.
+
+Codex active-budget rounds retry only the explicit provider capacity error, in
+the same session and worktree, at most six invocations per logical round. Earlier
+active time is deducted from every retry; backoff is recorded separately as
+`infrastructure_wait_seconds`. Model timeouts and other errors are not retried.
+Each invocation retains its events and result under `attempt-NN`; the logical
+round records the combined accounting and complete attempt list. A durable
+`clock.json` is refreshed every half second while the CLI runs. An unfinished
+invocation without a terminal receipt requires inspection of its clock and
+process; resuming never silently starts it over with a fresh budget.
 
 Tasks whose hidden tests live in the same files the agent edits can freeze a
 `verification_append` mapping from source path to `{ "source": "...", "namespace": "..." }`
@@ -320,6 +394,13 @@ VM layout and locking:
 <vm-root>/trials/<trial-id>/
   public.seed/, public/            # public-test worktree
   verify.seed/, verify/            # held-out verifier worktree
+  performance.seed/, performance/  # candidate benchmark, without hidden tests
+  performance.benchmark-build.json # content/toolchain contract and binary digest
+  performance.benchmark-builds/    # immutable receipts referenced by checkpoints
+<vm-root>/trials/<reference-hash>/
+  reference.seed/, reference/      # trusted, evaluator-owned benchmark worktree
+  reference.benchmark-build.json   # reusable reference binary receipt
+  reference.benchmark-builds/      # immutable reference compilation receipts
 <vm-root>/queue/<job-id>/           # request, worker log, durable result
 ```
 
@@ -329,8 +410,32 @@ controller does not release the remote lock. A new worker fences surviving owned
 containers before running tests. Containers are stopped between jobs but retained;
 compiler output such as `/build-cache/target` survives while source is updated to the
 base plus the immutable candidate patch. An alternate Git index applies only content
-changes, preserving timestamps on unchanged sources and avoiding needless rebuilds. There is no shared mutable cache between trials
-or between public and private lanes. VM filesystem ownership is restored before releasing
+changes, preserving timestamps on unchanged sources and avoiding needless rebuilds.
+Functional tests and performance benchmarks have separate Git databases and container
+layers, so adding hidden tests cannot invalidate the candidate's performance build.
+Benchmark source and Cargo manifest changes are tracked in the desired tree and stay
+unchanged across identical jobs, rather than being deleted and reinstalled each time.
+
+Performance builds cache an executable only after successful compilation and checksum
+verification. The key includes the source tree, base commit, pinned image/environment,
+benchmark specification/features, compiler and Cargo versions, and build command.
+Every cache hit checks the binary digest; a missing/changed binary or any changed key
+input rebuilds it. Cargo's own `Fresh` flag cannot validate an unverified binary;
+such an executable is invalidated within its configured target directory and rebuilt.
+Content-addressed receipts preserve the original compiler output across later builds and identify cache
+hits separately from new compilation. A trusted reference with the same immutable
+inputs can share its evaluator-only binary across trials on that grading VM; candidate
+caches remain private to each trial. No compiled hidden/reference artifact enters a
+public lane. Cached executables still run fresh paired performance samples at every
+distinct graded checkpoint: historical timing measurements are not reused.
+
+When a functional critical check fails, performance is excluded immediately, without
+constructing or compiling either performance workspace. Original check statuses are
+preserved: an execution/infrastructure failure remains `needs_review`, rather than
+silently becoming an eligible zero. Frozen task validation remains the prerequisite
+for reference correctness and environment readiness.
+
+VM filesystem ownership is restored before releasing
 the lock. The container has no network, no Docker socket, and only its own source and
 read-only Git metadata bind mounts.
 
@@ -359,7 +464,8 @@ Cache reads/writes are included once in input. Missing interrupted-request usage
 unknown. CLI price estimates are not subscription invoices.
 
 The retired protocol is retained under `metabench.legacy` and `legacy-run` only for
-reproducing historical results. New runs emit `protocol_id: native-cli-v1`; reports reject
+reproducing historical results. Active-budget runs emit `protocol_id: native-cli-v2-active-budget`;
+wall-budget runs use `native-cli-v2-wall-budget`. Reports reject
 mixing them with legacy command-loop measurements.
 
 ## Scoring and reporting

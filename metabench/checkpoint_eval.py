@@ -11,41 +11,7 @@ import statistics
 from .schema import digest
 from .performance import metric_score, PERFORMANCE_POLICY_ID
 from .scoring import EVALUATION_POLICY_ID, combined_score
-
-
-def checked(workspace, command, *, source=None, timeout=900):
-    result = workspace.command(command, timeout, source)
-    if result["returncode"]:
-        raise RuntimeError(result["output"][-8000:])
-    return result
-
-
-def install(workspace, spec):
-    directory = "rust/" + spec["crate"]
-    path = directory + "/benches/metabench_perf.rs"
-    checked(workspace, "test ! -e " + path)
-    checked(workspace, "mkdir -p " + directory + "/benches")
-    checked(workspace, "cat > " + path, source=spec["benchmark_source"])
-    checked(workspace, "cat >> " + directory + "/Cargo.toml",
-            source='\n[[bench]]\nname = "metabench_perf"\nharness = false\n')
-
-
-def build(workspace, spec):
-    install(workspace, spec)
-    features = " --features " + ",".join(spec["features"]) if spec.get("features") else ""
-    result = workspace.command(f"cargo bench --locked --profile release-with-debug -p {spec['crate']} "
-                               f"--bench metabench_perf --no-run --message-format=json{features}", 900)
-    artifacts = []
-    for line in result["output"].splitlines():
-        try:
-            event = json.loads(line)
-        except ValueError:
-            continue
-        if event.get("reason") == "compiler-artifact" and event.get("target", {}).get("name") == "metabench_perf" and event.get("executable"):
-            artifacts.append(event["executable"])
-    if result["returncode"] or len(artifacts) != 1:
-        return None, result
-    return artifacts[0], result
+from .benchmark_build import build
 
 
 def sample(workspace, binary):
@@ -92,43 +58,64 @@ def evaluate(root, request, candidate, functional):
     # Import lazily because vm_worker owns workspace construction and the lock.
     from .vm_worker import CachedWorkspace, execute
     spec = request["task"]["supplemental"]
-    reference_request = {**request, "trial_id": digest({"trial": request["trial_id"], "reference": True})[:24]}
-    reference = CachedWorkspace(root, reference_request, "verify")
     evidence = {"protocol": "paired-checkpoint-v2-functional-performance", "evaluation_policy_id": EVALUATION_POLICY_ID, "performance_policy_id": PERFORMANCE_POLICY_ID,
                 "spec_hash": digest(spec), "pairs": []}
+    # Frozen task validation already established a runnable reference. A failing
+    # candidate has no performance score; do not compile either benchmark for it.
+    # Keep original check statuses so an infrastructure failure remains reviewable.
+    if not functional["critical_pass"]:
+        return scored_result(functional, evidence, spec)
+    reference_request = {**request, "trial_id": digest({
+        "role": "reference-performance-v1", "base_sha256": request["base_sha256"],
+        "environment": request["environment"], "patch": request["task"]["patch"], "spec": spec})[:24]}
+    workspaces = []
     try:
-        checked(reference, "true")
+        reference = CachedWorkspace(root, reference_request, "reference")
+        workspaces.append(reference)
         if reference.restore_source_ownership()["returncode"]:
             raise RuntimeError("reference ownership recovery failed")
-        reference.prepare([request["task"]["patch"]])
+        reference.prepare([request["task"]["patch"]], benchmark=spec)
         refbin, evidence["reference_build"] = build(reference, spec)
         if not refbin:
             raise RuntimeError("historical reference performance build failed")
+        # Never strip the hidden tests out of the functional verification tree.
+        # Separate seeds, source trees and container layers retain both builds.
+        candidate = CachedWorkspace(root, request, "performance")
+        workspaces.append(candidate)
         if candidate.restore_source_ownership()["returncode"]:
             raise RuntimeError("candidate ownership recovery failed")
-        candidate.prepare([request["patch"]])
-        if functional["critical_pass"]:
-            binary, evidence["candidate_build"] = build(candidate, spec)
-            if binary:
-                for repeat in range(spec["repeats"]):
-                    pair = {}
-                    for side in (("reference", "candidate") if repeat % 2 == 0 else ("candidate", "reference")):
-                        pair[side] = sample(reference if side == "reference" else candidate, refbin if side == "reference" else binary)
-                    evidence["pairs"].append(pair)
-                    if not all(value["valid"] for value in pair.values()):
-                        break
-        metrics = performance_scores(evidence["pairs"], spec["repeats"], spec.get("tolerance"))
-        performance = statistics.mean(m["score"] for m in metrics) if metrics else None
-        performance_status = "excluded_incorrect_solution" if not functional["critical_pass"] else ("measured" if metrics else "measurement_failed")
-        scores = {"functional": functional["score"], "performance": performance}
-        total = combined_score(scores["functional"], performance, functional["critical_pass"])
-        return {**functional, "functional_score": functional["score"], "functional_scores": functional["scores"],
-                "performance_policy_id": PERFORMANCE_POLICY_ID, "evaluation_policy_id": EVALUATION_POLICY_ID,
-                "scores": scores, "score": total, "performance_metrics": metrics or [], "performance_status": performance_status,
-                "supplemental_evaluation": evidence,
-                "supplemental_status": "needs_review" if performance_status == "measurement_failed" else "scored"}
+        candidate.prepare([request["patch"]], benchmark=spec)
+        binary, evidence["candidate_build"] = build(candidate, spec)
+        if binary:
+            for repeat in range(spec["repeats"]):
+                pair = {}
+                for side in (("reference", "candidate") if repeat % 2 == 0 else ("candidate", "reference")):
+                    pair[side] = sample(reference if side == "reference" else candidate, refbin if side == "reference" else binary)
+                evidence["pairs"].append(pair)
+                if not all(value["valid"] for value in pair.values()):
+                    break
+        return scored_result(functional, evidence, spec)
     finally:
-        ownership = reference.restore_source_ownership()
-        stopped = execute(["docker", "stop", "--time", "2", reference.container], timeout=30)
-        if ownership["returncode"] or stopped["returncode"]:
-            raise RuntimeError("reference container cleanup failed")
+        failures = []
+        for workspace in workspaces:
+            ownership = workspace.restore_source_ownership()
+            stopped = execute(["docker", "stop", "--time", "2", workspace.container], timeout=30)
+            if ownership["returncode"] or stopped["returncode"]:
+                failures.append(workspace.container)
+        if failures:
+            raise RuntimeError("performance container cleanup failed: " + ", ".join(failures))
+
+
+def scored_result(functional, evidence, spec):
+    metrics = performance_scores(evidence["pairs"], spec["repeats"], spec.get("tolerance"))
+    performance = statistics.mean(m["score"] for m in metrics) if metrics else None
+    status = "excluded_incorrect_solution" if not functional["critical_pass"] else ("measured" if metrics else "measurement_failed")
+    scores = {"functional": functional["score"], "performance": performance}
+    bad_checks = any(c.get("status") not in ("passed", "test_failed", "measured")
+                     for c in functional.get("checks", {}).values())
+    return {**functional, "functional_score": functional["score"], "functional_scores": functional["scores"],
+            "performance_policy_id": PERFORMANCE_POLICY_ID, "evaluation_policy_id": EVALUATION_POLICY_ID,
+            "scores": scores, "score": combined_score(scores["functional"], performance, functional["critical_pass"]),
+            "performance_metrics": metrics or [], "performance_status": status,
+            "supplemental_evaluation": evidence,
+            "supplemental_status": "needs_review" if bad_checks or status == "measurement_failed" else "scored"}

@@ -20,6 +20,18 @@ def dashboard_data(rows, metadata=None):
         task: chart_data([r for r in rows if r["task_id"] == task])["charts"]
         for task in data["tasks"]
     }
+    data["task_groups"] = []
+    for group in (metadata or {}).get("task_groups", []):
+        task_ids = group["task_ids"]
+        if (not task_ids or len(set(task_ids)) != len(task_ids)
+                or not set(task_ids) <= set(data["tasks"])
+                or not group["id"] or group["id"] in data["tasks"]
+                or any(g["id"] == group["id"] for g in data["task_groups"])):
+            raise ValueError("task groups must uniquely identify nonempty subsets of report tasks")
+        data["task_groups"].append({
+            "id": group["id"], "label": group["label"], "task_ids": task_ids,
+            "charts": chart_data([r for r in rows if r["task_id"] in task_ids])["charts"],
+        })
     # Keep tool transcripts, patches, local paths and provider receipts out of the page.
     fields = ("config_id", "task_id", "step", "repeat", "status", "score_eligible",
               "scores", "usage", "observed_usage_lower_bound", "budget_mode",

@@ -12,6 +12,7 @@ from pathlib import Path
 
 from . import usage
 from .schema import write_json
+from .model_policy import cli_overrides, resolve_agents
 
 
 def cli_identity(spec):
@@ -52,6 +53,9 @@ def subtract_usage(current, previous):
 
 
 def parse_events(provider, events, model, expected_session=None, previous_usage=None, require_test_tool=False):
+    if provider == "dsh":
+        from .dsh_cli import parse_events as parse_dsh_events
+        return parse_dsh_events(events, model, expected_session)
     session = None
     increment = usage.normalize({})
     metadata = {"provider": provider, "requested_model": model}
@@ -111,7 +115,7 @@ def parse_events(provider, events, model, expected_session=None, previous_usage=
         metadata["tool_calls"] = sum(b.get("type") == "tool_use" for e in events if e.get("type") == "assistant"
                                      for b in e.get("message", {}).get("content", []))
     else:
-        raise ValueError("provider must be codex or claude")
+        raise ValueError("provider must be codex, claude, or dsh")
     if expected_session and session and session != expected_session:
         raise ValueError("native CLI resumed the wrong session")
     return {"session_id": session or expected_session, "usage": increment,
@@ -120,6 +124,9 @@ def parse_events(provider, events, model, expected_session=None, previous_usage=
 
 def command(spec, session_id, mcp_path):
     provider = spec["provider"]
+    if provider == "dsh":
+        from .dsh_cli import command as dsh_command
+        return dsh_command(spec, session_id, mcp_path)
     executable = spec.get("command", [provider])
     if not isinstance(executable, list) or not executable:
         raise ValueError("native command must be a nonempty argv array")
@@ -138,6 +145,9 @@ def command(spec, session_id, mcp_path):
                  "-c", 'mcp_servers.bench.enabled_tools=["run_tests"]',
                  "-c", 'mcp_servers.bench.tools.run_tests.approval_mode="approve"']
         argv += list(spec.get("extra_args", []))
+        # Append benchmark policy last, so extra args cannot silently restore
+        # a smaller context or a different service tier than the selected policy.
+        argv += cli_overrides(spec)
         return argv + ([session_id] if session_id else []) + ["-"]
     if provider == "claude":
         argv = [*executable, "-p", "--output-format", "stream-json", "--verbose",
@@ -149,17 +159,19 @@ def command(spec, session_id, mcp_path):
                 "--no-chrome", "--prompt-suggestions", "false"]
         argv += ["--resume", session_id] if session_id else ["--session-id", str(uuid.uuid4())]
         return argv + list(spec.get("extra_args", []))
-    raise ValueError("provider must be codex or claude")
+    raise ValueError("provider must be codex, claude, or dsh")
 
 
 def run_turn(spec, root, prompt, out, *, session_id=None, mcp_path, timeout=None, stop=None,
              previous_usage=None, queue_wait=None, queue_timeout=None, budget_mode="active"):
     if budget_mode not in ("active", "wall"):
         raise ValueError("budget_mode must be active or wall")
+    spec = resolve_agents([spec], refresh=False)[0]
     out = Path(out)
     out.mkdir(parents=True, exist_ok=False)
     argv = command(spec, session_id, mcp_path)
-    write_json(out / "invocation.json", {"argv": argv, "cwd": str(root), "session_id": session_id})
+    write_json(out / "invocation.json", {"argv": argv, "cwd": str(root), "session_id": session_id,
+                                        **({"model_policy": spec["model_policy"]} if "model_policy" in spec else {})})
     (out / "prompt.txt").write_text(prompt)
     started = time.monotonic()
     started_at = time.time()
@@ -167,23 +179,43 @@ def run_turn(spec, root, prompt, out, *, session_id=None, mcp_path, timeout=None
     interrupted = False
     infrastructure_error = None
     clock = {"wall_seconds": 0.0, "queue_wait_seconds": 0.0, "active_seconds": 0.0}
+    last_saved_clock = -1.0
+    def save_clock(state, process_id=None):
+        payload = {**clock, "state": state, "started_at": started_at,
+                   "observed_at": time.time(), "active_budget_seconds": timeout,
+                   "budget_mode": budget_mode, "pid": process_id,
+                   "controller_pid": os.getpid(), "session_id": session_id}
+        temporary = out / "clock.json.tmp"
+        with temporary.open("w") as stream:
+            json.dump(payload, stream)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, out / "clock.json")
     def timing():
         wall = time.monotonic() - started
         waiting = min(wall, max(0, queue_wait(started_at, started_at + wall))) if queue_wait else 0.0
         return {"wall_seconds": wall, "queue_wait_seconds": waiting, "active_seconds": wall - waiting}
     environment = {k: v for k, v in os.environ.items() if not k.startswith("CODEX_") or k == "CODEX_HOME"}
+    if spec["provider"] == "dsh":
+        from .dsh_cli import environment as dsh_environment
+        environment = {k: v for k, v in environment.items() if not k.startswith("DSH_") and k != "NODE_OPTIONS"}
+        environment.update(dsh_environment(spec, out))
     if spec["provider"] == "claude":
         environment["CLAUDE_CODE_EFFORT_LEVEL"] = spec["reasoning"]
     with (out / "events.jsonl").open("w") as stdout, (out / "stderr.txt").open("w") as stderr:
         process = subprocess.Popen(argv, cwd=root, stdin=subprocess.PIPE, stdout=stdout, stderr=stderr,
                                    text=True, env=environment, start_new_session=True)
         try:
+            save_clock("running", process.pid)
             process.stdin.write(prompt)
             process.stdin.close()
             while process.poll() is None:
                 if stop is not None and stop.is_set():
                     raise KeyboardInterrupt
                 clock = timing()
+                if clock["wall_seconds"] - last_saved_clock >= .5:
+                    save_clock("running", process.pid)
+                    last_saved_clock = clock["wall_seconds"]
                 if queue_timeout is not None and clock["queue_wait_seconds"] >= queue_timeout:
                     raise RuntimeError("public test infrastructure wait limit exceeded")
                 charged = clock["active_seconds"] if budget_mode == "active" else clock["wall_seconds"]
@@ -227,6 +259,8 @@ def run_turn(spec, root, prompt, out, *, session_id=None, mcp_path, timeout=None
                   budget_mode=budget_mode, returncode=process.returncode,
                   native_event_log=str(out / "events.jsonl"))
     result["provider"]["requested_reasoning"] = spec["reasoning"]
+    if "model_policy" in spec:
+        result["model_policy"] = spec["model_policy"]
     if infrastructure_error:
         result.update(status="infrastructure_error", error=infrastructure_error)
     elif timed_out:
@@ -239,4 +273,6 @@ def run_turn(spec, root, prompt, out, *, session_id=None, mcp_path, timeout=None
         result["observed_usage_lower_bound"] = result["usage"]
         result["usage"] = usage.normalize({})
     write_json(out / "result.json", result)
+    clock = measured
+    save_clock("finished", process.pid)
     return result

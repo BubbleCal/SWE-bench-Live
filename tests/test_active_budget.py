@@ -64,13 +64,24 @@ class ActiveBudgetTest(unittest.TestCase):
                               'time.sleep(1.2)\n'
                               'print(json.dumps({"type":"turn.completed","usage":{}}),flush=True)\n')
             spec = {'provider': 'codex', 'model': 'test', 'reasoning': 'high'}
+            observed_clocks = []
+            def queued_wait(start, end):
+                path = root/'queued/clock.json'
+                if path.exists():
+                    observed_clocks.append(json.loads(path.read_text()))
+                return min(.9, end-start)
             with patch('metabench.native_cli.command', return_value=[sys.executable, str(script)]):
                 result = run_turn(spec, root, 'task', root / 'queued', mcp_path=root/'unused',
-                                  timeout=.7, queue_wait=lambda start, end: min(.9, end-start))
+                                  timeout=.7, queue_wait=queued_wait)
                 self.assertEqual(result['status'], 'submitted')
                 self.assertGreater(result['wall_seconds'], .7)
                 self.assertLess(result['active_seconds'], .7)
                 self.assertAlmostEqual(result['wall_seconds'], result['active_seconds'] + result['queue_wait_seconds'])
+                clock = json.loads((root/'queued/clock.json').read_text())
+                self.assertEqual(clock['state'], 'finished')
+                self.assertAlmostEqual(clock['active_seconds'], result['active_seconds'])
+                self.assertIsInstance(clock['pid'], int)
+                self.assertTrue(any(c['state']=='running' and c['wall_seconds']>.4 for c in observed_clocks))
                 result = run_turn(spec, root, 'task', root / 'executing', mcp_path=root/'unused',
                                   timeout=.3, queue_wait=lambda start, end: 0)
                 self.assertEqual(result['status'], 'round_timeout')

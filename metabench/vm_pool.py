@@ -169,7 +169,7 @@ except BaseException:
 
 
 class VMPool:
-    def __init__(self, queue, specifications, control_directory, *, vm_count=None, driver_factory=SSHVM):
+    def __init__(self, queue, specifications, control_directory, *, vm_count=None, driver_factory=SSHVM, kinds=None):
         count = len(specifications) if vm_count is None else vm_count
         if isinstance(count, bool) or not isinstance(count, int) or not 1 <= count <= len(specifications):
             raise ValueError("vm_count must select 1..N configured VMs")
@@ -182,6 +182,9 @@ class VMPool:
         self.owner = uuid.uuid4().hex
         self.threads = []
         self.errors = {}
+        self.kinds = None if kinds is None else frozenset(kinds)
+        if self.kinds is not None and (not self.kinds or not self.kinds <= {"public", "verify"}):
+            raise ValueError("worker kinds must select public or verify")
 
     def start(self):
         for name in self.drivers:
@@ -204,6 +207,10 @@ class VMPool:
 
     def _worker(self, name):
         driver = self.drivers[name]
+        def launch(job):
+            if self.kinds is not None and job["kind"] not in self.kinds:
+                raise ValueError("job routed to the wrong worker pool: " + job["id"])
+            driver.launch(job)
         def wait(job):
             if getattr(driver, "resource_timing", False):
                 return driver.wait(job["id"], self.stop, on_started=lambda timestamp:
@@ -214,7 +221,7 @@ class VMPool:
             # Reconcile a crashed local controller before claiming more work.
             for job in self.queue.running():
                 if job["vm_id"] == name:
-                    driver.launch(job)
+                    launch(job)
                     result = wait(job)
                     self.queue.finish(job["id"], result, owner=job["owner"])
             while not self.stop.is_set():
@@ -222,7 +229,7 @@ class VMPool:
                 if job is None:
                     self.stop.wait(.1)
                     continue
-                driver.launch(job)
+                launch(job)
                 result = wait(job)
                 self.queue.finish(job["id"], result, owner=self.owner)
         except Exception as error:

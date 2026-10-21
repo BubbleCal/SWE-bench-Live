@@ -22,9 +22,11 @@ jobs:
       - run: .venv/bin/metabench --help
       - run: .venv/bin/python -m unittest discover -s tests -v
       - run: docker build -t metabench-python -f examples/metabench/python.Dockerfile .
+      - run: docker build -t metabench-rust-test -f examples/metabench/rust-test.Dockerfile .
       - name: Docker integration
         run: |
           METABENCH_TEST_IMAGE=$(docker image inspect metabench-python --format '{{.Id}}') \
+          METABENCH_TEST_RUST_IMAGE=$(docker image inspect metabench-rust-test --format '{{.Id}}') \
             .venv/bin/python -m unittest discover -s tests -p '*docker.py' -v
   upstream-integration:
     runs-on: ubuntu-latest

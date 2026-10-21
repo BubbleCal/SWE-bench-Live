@@ -17,6 +17,23 @@ def row(task="a", step=1, **fields):
 
 
 class DashboardTest(unittest.TestCase):
+    def test_common_task_group_keeps_full_suite_missing_results_as_gaps(self):
+        rows = [row(), row(task="b", scores={"functional": 0}),
+                row(config_id="historical", model="historical", scores={"functional": 80})]
+        metadata = {"task_groups": [{"id": "common", "label": "Common tasks", "task_ids": ["a"]}]}
+        data = dashboard_data(rows, metadata)
+        full = data["charts"][0]["points"]
+        common = data["task_groups"][0]["charts"][0]["points"]
+        self.assertEqual(full["config"][0]["score"], 50)
+        self.assertIsNone(full["historical"][0]["score"])
+        self.assertEqual(full["historical"][0]["missing_tasks"], ["b"])
+        self.assertEqual(common["config"][0]["score"], 100)
+        self.assertEqual(common["historical"][0]["score"], 80)
+        self.assertEqual(common["historical"][0]["applicable_tasks"], 1)
+        for ids in ([], ["a", "a"], ["missing"]):
+            with self.assertRaises(ValueError):
+                dashboard_data(rows, {"task_groups": [{"id": "common", "label": "Common tasks", "task_ids": ids}]})
+
     def test_partial_tasks_remain_gaps_but_can_be_inspected_individually(self):
         rows=[row(),row(task="b",config_id="other",model="other")]
         data=dashboard_data(rows)

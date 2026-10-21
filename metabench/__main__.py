@@ -41,6 +41,7 @@ def main():
         native.add_argument("--" + flag, type=Path, required=True)
     native.add_argument("--repo", required=True)
     native.add_argument("--vm-count", type=int)
+    native.add_argument("--grading-vm-count", type=int)
     native.add_argument("--parallel-agents", type=int)
     native.add_argument("--resume", action="store_true")
     report = sub.add_parser("report", help="render interactive HTML, or Markdown with image exports")
@@ -86,7 +87,8 @@ def main():
         elif args.operation == "run":
             from .native_run import run_matrix
             rows = run_matrix(load_suite(args.suite), args.repo, read_json(args.environment), read_json(args.matrix),
-                              args.out, vm_count=args.vm_count, parallel=args.parallel_agents, resume=args.resume)
+                              args.out, vm_count=args.vm_count, grading_vm_count=args.grading_vm_count,
+                              parallel=args.parallel_agents, resume=args.resume)
             return 0 if read_json(args.out / "run.json").get("status") == "Complete" else 1
         elif args.operation == "report":
             from .report import write_report
